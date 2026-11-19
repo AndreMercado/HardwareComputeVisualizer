@@ -284,6 +284,37 @@ classDiagram
         +link_text()
         +sample()
     }
+    class profiler["profiler.py"] {
+        <<module>>
+        -_norm(path)
+        +main()
+    }
+    class Profiler {
+        +script
+        +root
+        +out
+        +interval
+        +memory
+        +lines
+        +hw
+        +hw_peak_gpu
+        +t0
+        +sampled
+        +done
+        +result
+        -_mine
+        +main_ident
+        +cores
+        +mem_peak
+        +__init__(script, out, interval_ms, memory)
+        -_is_mine(filename)
+        -_sample_loop()
+        -_hardware_loop()
+        -_writer_loop()
+        +write(running)
+        -_memory_check()
+        +run(argv)
+    }
     class remote["remote.py"] {
         <<module>>
         +ssh_runner(host, user, key, port)
@@ -477,6 +508,14 @@ classDiagram
         +run_pcie(seconds)
         +run_ml(seconds, device)
         +run_usercode(seconds, command)
+    }
+    class hotspots["hotspots.py"] {
+        <<module>>
+        +slow_python_sum(n)
+        +fast_numpy_sum(n)
+        +build_strings(n)
+        +wait_for_network()
+        +main()
     }
     App ..> CompareWindow : uses
     App ..> ControlServer : uses

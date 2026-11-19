@@ -114,6 +114,27 @@ is needed for GPU and board readings.
   test and exits by itself. On exit it deletes its folder. THIS PC switches back and removes it.
 - The app never creates, starts, stops or pays for cloud machines.
 
+### Which lines of your code take the time (VS Code extension)
+
+`profiler.py` runs a Python file and notes, every 5 ms, which line *of your code* is running
+(time inside numpy, PyTorch or the standard library counts for your line that called it), along
+with what the hardware was doing. The **HCV Hot Spots** extension for VS Code turns that into
+coloured boxes around the slowest blocks of code - #1 red, #2 orange, #3 yellow - each labelled
+like
+
+    ◀ #1 · 75% of the run time · 4.9 s · 1 line · 1 of 20 cores busy - single-threaded
+
+The boxes fill in live while the program runs and stay until the next run. Optionally, blue dashed
+boxes mark the lines whose objects held the most memory. Install it with
+
+    powershell -ExecutionPolicy Bypass -File vscode-extension/install.ps1
+
+then reload VS Code, open a `.py` file and press the flame button in the editor title (or
+right-click > HCV: ...). "Profile in the Hardware Visualizer" runs it as YOUR CODE in this app
+(AI CONTROL on), so you watch the hardware while the boxes fill in. Try it on
+`examples/hotspots.py`. Details: `vscode-extension/README.md`. Without VS Code:
+`python profiler.py your_script.py` writes `.hcv/profile.json` next to the script.
+
 ### AI control: let an AI drive the app while you watch
 
 Press **AI CONTROL** (top right) or start with `python main.py --ai-control`. Another program -
@@ -159,6 +180,8 @@ bottleneck finder said.
 | `remote.py` | SSH connection to a remote machine: copies and drives the agent. |
 | `control.py` | AI CONTROL: the local, token-protected API another program uses to drive the window. |
 | `mcp_server.py` | MCP server that gives AI assistants the app's controls as tools (registered in `.mcp.json`). |
+| `profiler.py` | Line profiler for your own Python code; feeds the VS Code extension. |
+| `vscode-extension/` | HCV Hot Spots: boxes the slowest code in VS Code, live. |
 | `analysis.py` | Bottleneck finder: reads a run's samples and says where the hardware sat unused. |
 | `remote_agent.py` | Runs on the remote machine: reads its sensors, runs the tests, stops itself if contact is lost. |
 | `agent.py` | The AI benchmark: talks to the local Ollama model and runs its tool calls. |

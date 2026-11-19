@@ -3,3 +3,4 @@ ai_workspace/
 runs/
 remote_target.json
 control_token.txt
+.hcv/

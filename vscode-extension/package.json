@@ -1,0 +1,41 @@
+{
+  "name": "hcv-hotspots",
+  "displayName": "HCV Hot Spots",
+  "description": "Runs your Python file under the Hardware Compute Visualizer's profiler and draws boxes around the code that takes the most time (and memory), live while it runs, with what the hardware was doing there.",
+  "version": "0.1.0",
+  "publisher": "hcv",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Visualization", "Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:python", "workspaceContains:**/.hcv/profile.json"],
+  "contributes": {
+    "commands": [
+      { "command": "hcv.profile", "title": "HCV: Profile this file (box the slow code)", "icon": "$(flame)" },
+      { "command": "hcv.profileMemory", "title": "HCV: Profile this file with memory (slower)" },
+      { "command": "hcv.profileInVisualizer", "title": "HCV: Profile in the Hardware Visualizer (watch the hardware)" },
+      { "command": "hcv.hotspots", "title": "HCV: Go to a hot spot" },
+      { "command": "hcv.stop", "title": "HCV: Stop profiling" },
+      { "command": "hcv.clear", "title": "HCV: Clear the boxes" }
+    ],
+    "menus": {
+      "editor/title": [
+        { "command": "hcv.profile", "when": "editorLangId == python", "group": "navigation" }
+      ],
+      "editor/context": [
+        { "command": "hcv.profile", "when": "editorLangId == python", "group": "hcv@1" },
+        { "command": "hcv.profileInVisualizer", "when": "editorLangId == python", "group": "hcv@2" },
+        { "command": "hcv.hotspots", "when": "editorLangId == python", "group": "hcv@3" }
+      ]
+    },
+    "configuration": {
+      "title": "HCV Hot Spots",
+      "properties": {
+        "hcv.pythonPath": { "type": "string", "default": "python", "description": "Python used to run your file." },
+        "hcv.visualizerFolder": { "type": "string", "default": "", "description": "Folder of the Hardware Compute Visualizer (profiler.py). Empty: the folder set when the extension was installed." },
+        "hcv.maxBoxes": { "type": "number", "default": 5, "description": "How many hot spots to box per file." },
+        "hcv.minShare": { "type": "number", "default": 0.02, "description": "Smallest share of the run time a block needs to get a box (0.02 = 2%)." }
+      }
+    }
+  }
+}

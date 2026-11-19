@@ -43,6 +43,11 @@ Result: YOUR CODE test (runs the user's own program locally or remotely), `analy
 
 Result: AI CONTROL button and `--ai-control` flag, `control.py` (local token-protected JSON API; every AI action shown in a purple banner, flashed and logged before it happens), `mcp_server.py` + `.mcp.json` so Claude can drive the app as MCP tools.
 
+### Session 8 - hot spots in the editor (2026-11-18)
+1. "...i want it where when it runs the code i know the parts of the code that are taking up the space running time ... make it visual studio extension ... add squares blocks of code this spend the most time here ... can you do that"
+
+Result: `profiler.py` (sampling line profiler: time per line of the user's code, what the program's own CPU use and the GPU were at those moments, optional memory per line; results saved every second) and the `vscode-extension/` HCV Hot Spots extension that draws ranked boxes around the slowest blocks, live, and can run the file inside the visualizer. Example: `examples/hotspots.py`.
+
 ## 2. AI Benchmark Mode prompts (`agent.py`)
 
 ### Message sequence (`agent.py:main`)
