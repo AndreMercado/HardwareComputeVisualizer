@@ -11,7 +11,8 @@ const http = require("http");
 const RANK_COLORS = ["#ff4d4d", "#ff9f1a", "#ffd60a", "#3ddc97", "#4dd2ff", "#c77dff"];
 const MEMORY_COLOR = "#4da6ff";
 let types = null;        // decoration types, made once
-let current = null;      // {path, data, mtime} - the profile on screen
+let current = null;      // {path, data, mtime} - the profile read last
+const cache = {};        // profile path -> {path, data, mtime}
 let proc = null;         // the profiler process we started
 let viaVisualizer = false;
 let timer = null;
@@ -34,6 +35,7 @@ function visualizerFolder() {
   }
 }
 
+// Where a run of this file writes its profile.
 function profileFor(file) {
   return path.join(path.dirname(file), ".hcv", "profile.json");
 }
@@ -41,13 +43,41 @@ function profileFor(file) {
 function readProfile(p) {
   try {
     const st = fs.statSync(p);
-    if (current && current.path === p && current.mtime === st.mtimeMs) return current;
+    const hit = cache[p];
+    if (hit && hit.mtime === st.mtimeMs) return (current = hit);
     const data = JSON.parse(fs.readFileSync(p, "utf8"));
-    current = { path: p, data, mtime: st.mtimeMs };
+    current = cache[p] = { path: p, data, mtime: st.mtimeMs };
     return current;
   } catch (e) {
     return null; // not there yet, or caught mid-write: try again on the next tick
   }
+}
+
+// The profile to show for a file: its own, or the newest one in a parent folder that has
+// lines in this file (a module imported by the script that was profiled).
+function profileShowing(file) {
+  const own = readProfile(profileFor(file));
+  if (own) return own;
+  let best = null;
+  let dir = path.dirname(path.dirname(file));
+  for (let i = 0; i < 6; i++) {
+    const prof = readProfile(path.join(dir, ".hcv", "profile.json"));
+    if (prof && (prof.data.lines || []).some((l) => norm(l.file) === norm(file)) && (!best || prof.mtime > best.mtime)) {
+      best = prof;
+    }
+    const up = path.dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  return best;
+}
+
+function profileMtime(file) {
+  for (const p of [profileFor(file)]) {
+    try { return fs.statSync(p).mtimeMs; } catch (e) { /* none here */ }
+  }
+  const prof = profileShowing(file);
+  return prof ? prof.mtime : 0;
 }
 
 function makeTypes() {
@@ -61,6 +91,10 @@ function makeTypes() {
   return {
     ranks: RANK_COLORS.map((c) => box(c, "solid")),
     memory: box(MEMORY_COLOR, "dashed"),
+    crash: vscode.window.createTextEditorDecorationType({
+      isWholeLine: true, borderStyle: "dotted", borderColor: "#ff4d4d", borderWidth: "2px",
+      backgroundColor: "rgba(255, 77, 77, 0.10)", overviewRulerColor: "#ff4d4d",
+      overviewRulerLane: vscode.OverviewRulerLane.Full }),
     label: vscode.window.createTextEditorDecorationType({}),
   };
 }
@@ -134,6 +168,7 @@ function fmtBytes(b) {
 function clear(editor) {
   if (!types) return;
   for (const t of [...types.ranks, types.memory]) for (const k in t) editor.setDecorations(t[k], []);
+  editor.setDecorations(types.crash, []);
   editor.setDecorations(types.label, []);
 }
 
@@ -148,7 +183,7 @@ function boxRanges(start, end, doc) {
 function decorate(editor) {
   if (!editor || editor.document.languageId !== "python" || editor.document.isUntitled) return;
   const file = editor.document.fileName;
-  const prof = readProfile(profileFor(file));
+  const prof = profileShowing(file);
   if (!types) types = makeTypes();
   clear(editor);
   if (!prof) return;
@@ -156,19 +191,30 @@ function decorate(editor) {
   const doc = editor.document;
   const labels = [];
   const live = data.running ? "LIVE · " : "";
+  const approx = !data.running && data.engine !== "py-spy" ? "≈" : "";
+  const how = data.engine === "py-spy"
+    ? "Measured with py-spy (exact line times" + (data.threads > 1 ? `; ${data.threads} threads/processes, their times add up` : "") + ")."
+    : data.running ? "Live estimate - the exact numbers replace it when the program ends (if py-spy is installed)."
+      : "Built-in sampler: approximate - time inside long C calls (sort, regex, json...) can land on the next line. " +
+        "`pip install py-spy` for exact numbers.";
 
   hotBlocks(data, file).forEach((b, i) => {
     const t = types.ranks[Math.min(i, types.ranks.length - 1)];
     const r = boxRanges(b.start, b.end, doc);
     for (const k of ["single", "top", "mid", "bot"]) editor.setDecorations(t[k], r[k]);
     const n = b.end - b.start + 1;
-    const hw = hardwareNote(b, data);
-    const text = `  ◀ #${i + 1} · ${live}${(100 * b.share).toFixed(0)}% of the run time · ${fmtSeconds(b.seconds)}` +
+    const imports = b.lines.every((l) => /^\s*(import|from)\s/.test(doc.lineAt(Math.min(l.line - 1, doc.lineCount - 1)).text));
+    const hw = imports ? "one-time import cost" : hardwareNote(b, data);
+    const isAsync = b.lines.some((l) => /asyncio\.run\(|\.run_until_complete\(/.test(doc.lineAt(Math.min(l.line - 1, doc.lineCount - 1)).text));
+    const text = `  ◀ #${i + 1} · ${live}${approx}${(100 * b.share).toFixed(0)}% of the run time · ${fmtSeconds(b.seconds)}` +
       ` · ${n} line${n > 1 ? "s" : ""}${hw ? " · " + hw : ""}`;
     const hover = new vscode.MarkdownString(
       `**Hot spot #${i + 1}** - lines ${b.start}-${b.end} in \`${b.func}\`\n\n` +
       `${(100 * b.share).toFixed(1)}% of the time spent in your code (${fmtSeconds(b.seconds)})` +
-      (hw ? `\n\nWhile it ran: ${hw}` : "") + "\n\n| line | time | share |\n|---|---|---|\n" +
+      (hw ? `\n\nWhile it ran: ${hw}` : "") +
+      (isAsync ? "\n\nThis is the event loop: time spent *awaiting* inside coroutines (sleeps, network) is counted " +
+        "here, because a waiting coroutine isn't running anywhere." : "") +
+      `\n\n_${how}_` + "\n\n| line | time | share |\n|---|---|---|\n" +
       b.lines.map((l) => `| ${l.line} | ${fmtSeconds(l.seconds)} | ${(100 * l.share).toFixed(1)}% |`).join("\n"));
     labels.push({ range: doc.lineAt(b.start - 1).range, hoverMessage: hover,
       renderOptions: { after: { contentText: text, color: RANK_COLORS[Math.min(i, RANK_COLORS.length - 1)],
@@ -186,6 +232,15 @@ function decorate(editor) {
         margin: "0 0 0 2em" } } });
   }
   for (const k in memRanges) editor.setDecorations(types.memory[k], memRanges[k]);
+
+  const crash = data.crash;
+  if (crash && norm(crash.file) === norm(file)) {
+    const r = doc.lineAt(Math.min(crash.line - 1, doc.lineCount - 1)).range;
+    editor.setDecorations(types.crash, [r]);
+    labels.push({ range: r, hoverMessage: new vscode.MarkdownString(`**The program crashed here**\n\n\`${crash.error}\``),
+      renderOptions: { after: { contentText: `  💥 crashed here: ${crash.error.slice(0, 120)}`, color: "#ff4d4d",
+        fontWeight: "bold", margin: "0 0 0 2em" } } });
+  }
   editor.setDecorations(types.label, labels);
 }
 
@@ -204,7 +259,7 @@ function updateStatus() {
     statusItem.show();
     return;
   }
-  const prof = e && e.document.languageId === "python" ? readProfile(profileFor(e.document.fileName)) : null;
+  const prof = e && e.document.languageId === "python" ? profileShowing(e.document.fileName) : null;
   const top = prof ? hotBlocks(prof.data, e.document.fileName)[0] : null;
   if (top) {
     statusItem.text = `$(flame) #1: lines ${top.start}-${top.end} · ${(100 * top.share).toFixed(0)}%`;
@@ -239,7 +294,16 @@ function finished(data) {
   const e = vscode.window.activeTextEditor;
   const top = e ? hotBlocks(data, e.document.fileName)[0] : null;
   output.appendLine(`[hcv] ${data.result || "done"} - ${fmtSeconds(data.elapsed_s || 0)}`);
-  if (top) {
+  if (data.crash) {
+    vscode.window.showErrorMessage(`The program crashed at line ${data.crash.line}: ${data.crash.error}`, "Go to line")
+      .then(async (go) => {
+        if (!go) return;
+        const ed = await vscode.window.showTextDocument(vscode.Uri.file(data.crash.file));
+        const pos = new vscode.Position(data.crash.line - 1, 0);
+        ed.selection = new vscode.Selection(pos, pos);
+        ed.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      });
+  } else if (top) {
     vscode.window.showInformationMessage(
       `Hot spot #1: lines ${top.start}-${top.end} take ${(100 * top.share).toFixed(0)}% of the run time.`);
   }
@@ -253,6 +317,10 @@ async function prepare() {
   }
   if (proc || viaVisualizer) {
     vscode.window.showWarningMessage("Already profiling - stop it first.");
+    return null;
+  }
+  if (!vscode.workspace.isTrusted) {
+    vscode.window.showWarningMessage("Profiling runs this file's code - trust the folder first (Restricted Mode).");
     return null;
   }
   if (e.document.isUntitled || e.document.isDirty) await e.document.save();
@@ -360,7 +428,7 @@ async function stop() {
 
 async function gotoHotspot() {
   const e = vscode.window.activeTextEditor;
-  const prof = e ? readProfile(profileFor(e.document.fileName)) : null;
+  const prof = e ? profileShowing(e.document.fileName) : null;
   const blocks = prof ? hotBlocks(prof.data, e.document.fileName) : [];
   if (!blocks.length) {
     vscode.window.showInformationMessage("No hot spots for this file yet - run HCV: Profile this file.");
@@ -406,9 +474,8 @@ function activate(context) {
   const follow = setInterval(() => {
     for (const e of vscode.window.visibleTextEditors) {
       if (e.document.languageId !== "python" || e.document.isUntitled || e.document.isDirty) continue;
-      const p = profileFor(e.document.fileName);
-      let m = 0;
-      try { m = fs.statSync(p).mtimeMs; } catch (err) { m = 0; }
+      const p = e.document.fileName;
+      const m = profileMtime(p);
       if (seen[p] !== m) {
         seen[p] = m;
         decorate(e);

@@ -48,6 +48,11 @@ Result: AI CONTROL button and `--ai-control` flag, `control.py` (local token-pro
 
 Result: `profiler.py` (sampling line profiler: time per line of the user's code, what the program's own CPU use and the GPU were at those moments, optional memory per line; results saved every second) and the `vscode-extension/` HCV Hot Spots extension that draws ranked boxes around the slowest blocks, live, and can run the file inside the visualizer. Example: `examples/hotspots.py`.
 
+### Session 9 - testing the profiler on many programs (2026-11-18)
+1. "merge it and test it with many different python code files to see if it can be improved"
+
+Result: merged to main; 12 test programs (C calls holding the GIL, threads, multiprocessing, asyncio, recursion, classes, multi-file, GPU, file I/O, crash) with measured true times showed the in-process sampler misplaces time in C calls and short functions, so `profiler.py` now uses py-spy for the final numbers when installed (91-105 % of the true time on the right line), keeping the built-in sampler for live boxes and hardware readings. The extension finds profiles for imported modules, marks approximate numbers, shows crash lines and import costs, and works in Restricted Mode.
+
 ## 2. AI Benchmark Mode prompts (`agent.py`)
 
 ### Message sequence (`agent.py:main`)

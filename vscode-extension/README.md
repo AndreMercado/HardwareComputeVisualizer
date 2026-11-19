@@ -21,11 +21,27 @@ Hover a label for the line-by-line breakdown.
 
 ## How the time is counted
 
-Every 5 ms the profiler notes which line *of your project* is running. Time inside libraries
-(numpy, PyTorch, the standard library) counts for the line of yours that called them, so
-`y = model(x)` gets the time the model took. Lines next to each other in the same function form
-one block. "What the hardware was doing" is CPU, busiest core and GPU, sampled 10x a second
-while those lines ran. Only the main thread is profiled; child processes are not.
+The profiler notes which line *of your project* is running, many times a second. Time inside
+libraries (numpy, PyTorch, the standard library) counts for the line of yours that called them,
+so `y = model(x)` gets the time the model took. Lines next to each other in the same function form
+one block. "What the hardware was doing" is how many cores your program kept busy and the GPU load,
+measured while those lines ran.
+
+- **Exact numbers: install py-spy** (`pip install py-spy`). It samples from outside the program, so
+  long C calls (sort, regex, json, ...) are charged to the right line, and threads and child
+  processes (multiprocessing) are included - their times add up. Tested on 12 kinds of programs:
+  91-105 % of the real time on the right line.
+- **Without py-spy** the built-in sampler is used and labels start with `≈`: it can only look when
+  Python switches threads, so time inside long C calls can land on the next line and short
+  functions on their `def` line. The live boxes during a run always use it; with py-spy the exact
+  numbers replace them when the program ends.
+- **Imports** that take long are labelled "one-time import cost".
+- **Crashes:** the line where your code failed gets a dotted red box with the error.
+- **Modules:** opening a module imported by the profiled script shows its boxes too.
+- **asyncio:** time spent awaiting (sleeps, network) is counted on the `asyncio.run(...)` line,
+  because a waiting coroutine isn't running anywhere; the hover says so.
+- **Restricted Mode** (untrusted folder): saved boxes are shown, but profiling (which runs the code)
+  needs a trusted folder.
 
 ## Install
 

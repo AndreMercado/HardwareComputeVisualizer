@@ -287,6 +287,9 @@ classDiagram
     class profiler["profiler.py"] {
         <<module>>
         -_norm(path)
+        +find_pyspy()
+        +pyspy_lines(raw_path, script)
+        +run_with_pyspy(pyspy, a, out)
         +main()
     }
     class Profiler {
@@ -302,6 +305,9 @@ classDiagram
         +sampled
         +done
         +result
+        +exit_code
+        +crash
+        +finalizing
         -_mine
         +main_ident
         +cores

@@ -132,7 +132,8 @@ boxes mark the lines whose objects held the most memory. Install it with
 then reload VS Code, open a `.py` file and press the flame button in the editor title (or
 right-click > HCV: ...). "Profile in the Hardware Visualizer" runs it as YOUR CODE in this app
 (AI CONTROL on), so you watch the hardware while the boxes fill in. Try it on
-`examples/hotspots.py`. Details: `vscode-extension/README.md`. Without VS Code:
+`examples/hotspots.py`. For exact line times also `pip install py-spy` (otherwise the numbers are
+approximate and marked `≈`). Details: `vscode-extension/README.md`. Without VS Code:
 `python profiler.py your_script.py` writes `.hcv/profile.json` next to the script.
 
 ### AI control: let an AI drive the app while you watch
