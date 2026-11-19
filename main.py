@@ -7,7 +7,8 @@ the real numbers. Every run is recorded to runs/ so it can be compared with the
 previous one, compared side by side with any other run (another machine, or the
 same program before and after a change) and replayed. YOUR CODE runs the user's
 own program and analysis.py points out where it wastes the hardware.
-See SRS_HardwareComputeVisualizer.md.
+AI CONTROL lets another program (an AI) drive the window through control.py
+while you watch. See SRS_HardwareComputeVisualizer.md.
 """
 import collections
 import datetime
@@ -21,12 +22,14 @@ import tempfile
 import threading
 import time
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
+from tkinter import messagebox as _messagebox
 
 import psutil
 
 import agent
 import analysis
+import control
 import remote
 import telemetry
 
@@ -39,6 +42,7 @@ GREY = "#2a2a2a"
 FONT = "Bahnschrift"  # Windows' condensed techy UI face; Tk falls back if missing
 ACCENT = "#44d62c"    # brand green (title, Start)
 REPLAY_COLOR = "#ffb400"  # everything that marks "this is a recording, not live"
+AI_COLOR = "#c77dff"      # everything an AI does through AI CONTROL
 SEGMENTS = 22         # lit segments in each part's meter
 CANVAS_W, CANVAS_H = 840, 270
 HISTORY = 150         # points in each part's scrolling graph (one per 3 frames)
@@ -150,6 +154,42 @@ FMT = {"cpu_freq": "{:.0f}", "cpu_temp": "{:.0f}", "gpu_temp": "{:.0f}", "gpu_ut
        "loss": "{:.3f}", "cpu_power": "{:.1f}", "board_util": "{:.1f}", "pcie_rx": "{:.0f}",
        "pcie_tx": "{:.0f}", "board_temp": "{:.0f}", "cpu_core_max": "{:.0f}"}
 LOWER_IS_BETTER = {"frame_ms", "loss"}  # for the comparison with the previous run
+
+
+class _Dialogs:
+    """Stands in for tkinter.messagebox. While an AI controls the app nobody may be at the
+    keyboard to click a pop-up, so notices go to the log (and back to the AI), and a
+    "continue?" question is answered by the AI's own `confirm` flag on START."""
+
+    def __init__(self):
+        self.app = None
+        self.confirm = False
+        self.notes = []  # what the dialogs said during the current AI action
+
+    def _ai(self):
+        return self.app is not None and self.app.control is not None
+
+    def _note(self, kind, title, msg):
+        self.notes.append({"kind": kind, "title": title, "text": msg})
+        self.app._log(f"🤖 [{title}] {msg}", "ai")
+
+    def showerror(self, title, msg, **kw):
+        return self._note("error", title, msg) if self._ai() else _messagebox.showerror(title, msg, **kw)
+
+    def showwarning(self, title, msg, **kw):
+        return self._note("warning", title, msg) if self._ai() else _messagebox.showwarning(title, msg, **kw)
+
+    def showinfo(self, title, msg, **kw):
+        return self._note("info", title, msg) if self._ai() else _messagebox.showinfo(title, msg, **kw)
+
+    def askokcancel(self, title, msg, **kw):
+        if not self._ai():
+            return _messagebox.askokcancel(title, msg, **kw)
+        self._note("question", title, msg)
+        return self.confirm
+
+
+messagebox = _Dialogs()
 
 
 class Replay:
@@ -288,6 +328,10 @@ class App:
         w, h = 940, min(1160, root.winfo_screenheight() - 80)
         root.geometry(f"{w}x{h}+{(root.winfo_screenwidth() - w) // 2}+{max(0, (root.winfo_screenheight() - h) // 2 - 20)}")
 
+        self.control = None      # control.ControlServer while AI CONTROL is on
+        self._ai_queue = collections.deque()
+        self._ai_busy = False
+        messagebox.app = self
         self.local_hw = telemetry.detect_hardware()
         self.hw = self.local_hw  # the target machine's hardware (this PC, or the remote one)
         self.remote = None       # remote.RemoteTarget while a remote machine is the target (UC-2)
@@ -334,6 +378,8 @@ class App:
         head.pack(fill="x", pady=(0, 6))
         tk.Label(head, text="HARDWARE COMPUTE", bg=BG, fg=FG, font=(FONT, 20, "bold")).pack(side="left")
         tk.Label(head, text=" VISUALIZER", bg=BG, fg=ACCENT, font=(FONT, 20, "bold")).pack(side="left")
+        self.ai_banner = tk.Label(head, text="", bg=BG, fg=AI_COLOR, font=(FONT, 12, "bold"))
+        self.ai_banner.pack(side="left", padx=(18, 0))
         self.clock = tk.Label(head, text="IDLE", bg=BG, fg=MUTED, font=("Consolas", 11))
         self.clock.pack(side="right")
         tk.Frame(outer, bg=ACCENT, height=2).pack(fill="x", pady=(0, 8))
@@ -351,6 +397,9 @@ class App:
         self.btn_remote.pack(side="right", padx=(6, 0))
         self.btn_local = tk.Button(trow, text="THIS PC", command=self.use_local, **btn)
         self.btn_local.pack(side="right")
+        self.btn_ai = tk.Button(trow, text="AI CONTROL: OFF", command=self.toggle_ai_control, **btn)
+        self.btn_ai.config(fg=AI_COLOR, highlightbackground=AI_COLOR, activeforeground=AI_COLOR)
+        self.btn_ai.pack(side="right", padx=(0, 18))
 
         self.canvas = tk.Canvas(outer, width=CANVAS_W, height=CANVAS_H, bg=BG, highlightthickness=0)
         self.canvas.pack(pady=(0, 6))
@@ -471,7 +520,7 @@ class App:
                            state="disabled", wrap="word", highlightthickness=1, highlightbackground=LINE)
         self.log.pack(fill="x", pady=(0, 8))
         for tag, color in (("say", FG), ("tool", ACCENT), ("result", MUTED), ("blocked", "#ff5c5c"),
-                           ("done", "#b388ff"), ("info", MUTED)):
+                           ("done", "#b388ff"), ("info", MUTED), ("ai", AI_COLOR)):
             self.log.tag_config(tag, foreground=color)
         self._log("AI BENCHMARK: pick AI BENCHMARK + a task + a part, then START. The agent's steps appear here.",
                   "info")
@@ -587,6 +636,231 @@ class App:
     def open_compare(self):
         if not self.running:
             CompareWindow(self.root)
+
+    # ------------------------------------------------------------ AI control (control.py)
+    def toggle_ai_control(self):
+        if self.control:
+            self.control.close()
+            self.control = None
+            self.btn_ai.config(text="AI CONTROL: OFF", bg=BG, fg=AI_COLOR)
+            self.ai_banner.config(text="")
+            self._log("🤖 AI control is off.", "ai")
+            return
+        try:
+            self.control = control.ControlServer()
+        except OSError as e:
+            messagebox.showerror("AI control", f"Can't open 127.0.0.1:{control.PORT}: {e}")
+            return
+        self.btn_ai.config(text="AI CONTROL: ON", bg=AI_COLOR, fg="black")
+        self.ai_banner.config(text=f"🤖 AI CONTROL ON")
+        self._log(f"🤖 AI control is on: 127.0.0.1:{control.PORT}, token in control_token.txt. "
+                  "Everything the AI does shows here in purple.", "ai")
+
+    def _flash(self, widget, times=3):
+        """Blink a widget the AI is 'pressing' so the action is easy to see."""
+        try:
+            normal = widget.cget("bg")
+        except tk.TclError:
+            return
+
+        def step(n):
+            try:
+                widget.config(bg=AI_COLOR if n % 2 == 0 else normal)
+            except tk.TclError:
+                return
+            if n < 2 * times - 1:
+                self.root.after(120, step, n + 1)
+        step(0)
+
+    def _drain_control(self):
+        """AI requests -> UI thread. 'state' answers at once; every other action is shown
+        first (banner, log, flashing control) and done a moment later, one at a time."""
+        while True:
+            try:
+                item = self.control.requests.get_nowait()
+            except queue.Empty:
+                break
+            if item[0] in ("state", "summary", "runs"):
+                action, args, reply = item
+                reply.put(self._ai_do(action, args))
+            else:
+                self._ai_queue.append(item)
+        if self._ai_busy or not self._ai_queue:
+            return
+        action, args, reply = self._ai_queue.popleft()
+        desc, widget = self._ai_describe(action, args)
+        self._ai_busy = True
+        self.ai_banner.config(text=f"🤖 AI: {desc}")
+        self._log(f"🤖 AI → {desc}", "ai")
+        if widget is not None:
+            self._flash(widget)
+
+        def run():
+            try:
+                reply.put(self._ai_do(action, args))
+            except Exception as e:  # report, never kill the UI loop
+                reply.put((500, {"error": f"{type(e).__name__}: {e}"}))
+            finally:
+                self._ai_busy = False
+                if self.control:
+                    self.root.after(2500, lambda: self.control and not self._ai_busy and
+                                    self.ai_banner.config(text="🤖 AI CONTROL ON"))
+        self.root.after(450, run)  # long enough to see what is about to happen
+
+    def _ai_describe(self, action, args):
+        tests = {k: t["short"] for k, t in TESTS.items()}
+        if action == "select":
+            part = str(args.get("part", "")).lower()
+            w = self.combos[part].entry if part in self.combos else None
+            return f"select {part.upper()}" + (f" ({args['name']})" if args.get("name") else ""), w
+        if action == "test":
+            key = self._find_test(args.get("test"))
+            w = self.radios[list(TESTS).index(key)] if key else None
+            return f"choose test {tests.get(key, args.get('test'))}", w
+        if action == "program":
+            return f"program: {args.get('command', '')}", self.program_entry
+        if action == "ai_task":
+            return f"AI task: {args.get('task', '')}", self.goal_menu
+        if action == "start":
+            return "press START" + (" (and confirm)" if args.get("confirm") else ""), self.btn_start
+        if action == "stop":
+            return "press STOP", self.btn_stop
+        if action == "replay":
+            return f"replay {args.get('run', '')}", self.btn_replay
+        if action == "compare":
+            return "open COMPARE", self.btn_compare
+        if action == "remote":
+            return f"connect to {args.get('user', '')}@{args.get('host', '')}", self.btn_remote
+        if action == "local":
+            return "switch to THIS PC", self.btn_local
+        return action, None
+
+    @staticmethod
+    def _find_test(name):
+        n = str(name or "").strip().lower()
+        for k, t in TESTS.items():
+            if n in (k, t["short"].lower(), t["label"].lower()):
+                return k
+        return None
+
+    def _ai_state(self):
+        readings = {}
+        for key, label, unit, part, src in STATS:
+            text = self.stat_val[key].cget("text")
+            if text not in ("—", ""):
+                readings[label] = text
+        return {
+            "target": self.remote.label if self.remote else "this PC", "machine": self.hw.get("machine"),
+            "parts": self.options, "selected": {"part": self.selected, "name": self.selected_value},
+            "test": self.test_var.get(), "tests": {k: t["label"] for k, t in TESTS.items()},
+            "ai_task": self.goal_ids.get(self.goal_var.get()), "ai_tasks": {v: k for k, v in self.goal_ids.items()},
+            "program": self.program_var.get(), "running": self.running, "replay": bool(self.replay),
+            "elapsed_s": round(time.monotonic() - self.t_start, 1) if self.running else None,
+            "status": self.status.cget("text"), "readings": readings,
+            "connecting": self._connecting is not None,
+        }
+
+    def _ai_do(self, action, args):
+        """One AI action on the UI thread -> (HTTP code, body)."""
+        messagebox.notes = []
+        ok = lambda **kw: (200, dict(kw, status=self.status.cget("text"), messages=messagebox.notes))  # noqa: E731
+        bad = lambda msg, **kw: (400, dict(kw, error=msg, status=self.status.cget("text"),  # noqa: E731
+                                           messages=messagebox.notes))
+        if action == "state":
+            return 200, self._ai_state()
+        if action == "summary":
+            return 200, {"summary": self.summary.get("1.0", "end").strip()}
+        if action == "runs":
+            out = []
+            for n in sorted((n for n in os.listdir(RUNS_DIR) if n.endswith(".json")), reverse=True) \
+                    if os.path.isdir(RUNS_DIR) else []:
+                try:
+                    with open(os.path.join(RUNS_DIR, n), "r", encoding="utf-8") as f:
+                        r = json.load(f)
+                except (OSError, ValueError):
+                    continue
+                out.append({"run": n, "when": r.get("when"), "machine": r.get("machine"),
+                            "test": r.get("test_label"), "part": r.get("part"), "program": r.get("program"),
+                            "result": r.get("result"), "duration_s": r.get("duration"),
+                            "bottlenecks": [f"{100 * f['share']:.0f}% {f['title']}" for f in r.get("findings") or []]})
+            return 200, {"runs": out}
+        busy = self.running and action not in ("stop",)
+        if busy:
+            return bad("a test is running - stop it or wait for it first")
+        if action == "select":
+            part = str(args.get("part", "")).lower()
+            part = next((k for k in PARTS if part in (k, PARTS[k]["label"].lower())), None)
+            if not part:
+                return bad(f"part must be one of {list(PARTS)}")
+            if not self.options[part]:
+                return bad(f"{part} is not detected on this machine")
+            name = str(args.get("name") or "").lower()
+            value = next((o for o in self.options[part] if name and name in o.lower()), None)
+            if name and value is None:
+                return bad(f"no {part} matching {args['name']!r}", choices=self.options[part])
+            if value:
+                self.combos[part].set_value(value)
+                self._select(part, value)
+            else:
+                self._on_diagram_click(part)
+            return ok(selected={"part": self.selected, "name": self.selected_value})
+        if action == "test":
+            key = self._find_test(args.get("test"))
+            if not key:
+                return bad("unknown test", tests={k: t["short"] for k, t in TESTS.items()})
+            self.test_var.set(key)
+            return ok(test=key)
+        if action == "program":
+            self.test_var.set("code")
+            self.program_var.set(str(args.get("command", "")))
+            return ok(program=self.program_var.get())
+        if action == "ai_task":
+            t = str(args.get("task", "")).lower()
+            hit = next((title for title, gid in self.goal_ids.items() if t in (gid, title.lower())), None)
+            if not hit:
+                return bad("unknown AI task", tasks=list(self.goal_ids.values()))
+            self.test_var.set("ai")
+            self.goal_var.set(hit)
+            return ok(ai_task=self.goal_ids[hit])
+        if action == "start":
+            messagebox.confirm = bool(args.get("confirm"))
+            try:
+                self.start_test()
+            finally:
+                messagebox.confirm = False
+            if self.running:
+                return ok(running=True)
+            asked = [n for n in messagebox.notes if n["kind"] == "question"]
+            if asked and not args.get("confirm"):
+                return bad("needs confirmation - call start again with confirm=true to go ahead",
+                           question=asked[-1]["text"])
+            return bad("the test did not start")
+        if action == "stop":
+            if not self.running:
+                return bad("nothing is running")
+            self.stop_test("stopped by AI")
+            return ok(stopped=True)
+        if action == "replay":
+            path = os.path.join(RUNS_DIR, os.path.basename(str(args.get("run", ""))))
+            if not os.path.isfile(path):
+                return bad("no such run - see /runs")
+            self.start_replay(path)
+            return ok(running=self.running)
+        if action == "compare":
+            CompareWindow(self.root, args.get("a"), args.get("b"))
+            return ok(opened=True)
+        if action == "remote":
+            host, user, key = (str(args.get(k) or "").strip() for k in ("host", "user", "key"))
+            if not host or not user or not key:
+                return bad("host, user and key (path to an SSH private key) are needed")
+            if self._connecting:
+                return bad("already connecting")
+            self._connect(remote.RemoteTarget(host, user, key, int(args.get("port") or 22)))
+            return ok(connecting=True, note="poll /state until connecting is false")
+        if action == "local":
+            self.use_local()
+            return ok(target="this PC")
+        return bad("unknown action")
 
     # ------------------------------------------------------------ remote target (UC-2)
     def _load_remote_cfg(self):
@@ -1013,13 +1287,13 @@ class App:
         return f"{letters[0]}:\\" if letters else None
 
     # ------------------------------------------------------------ recorded runs
-    def start_replay(self):
+    def start_replay(self, path=None):
         """Play a recorded run back through the diagram and readout, clearly marked as a replay."""
         if self.running:
             return
         os.makedirs(RUNS_DIR, exist_ok=True)
-        path = filedialog.askopenfilename(title="Replay a recorded run", initialdir=RUNS_DIR,
-                                          filetypes=[("Recorded run", "*.json")])
+        path = path or filedialog.askopenfilename(title="Replay a recorded run", initialdir=RUNS_DIR,
+                                                  filetypes=[("Recorded run", "*.json")])
         if not path:
             return
         try:
@@ -1222,6 +1496,9 @@ class App:
         self._set_status(msg, "#f87171")
 
     def _on_close(self):
+        if self.control:
+            self.control.close()
+            self.control = None
         self.stop_test("closed", summary=False)
         if self.remote:
             self.remote.close()
@@ -1236,6 +1513,8 @@ class App:
         if raw_dt > 0:
             self.fps += (1.0 / raw_dt - self.fps) * 0.05
         try:
+            if self.control:
+                self._drain_control()
             if self.running:
                 self._tick_running(now)
             elif self.remote and not self.remote.alive:
@@ -1573,8 +1852,9 @@ class CompareWindow:
     COLORS = ("#00e5ff", "#ff9f1a")  # run A, run B
     GW, GH = 900, 230
 
-    def __init__(self, root):
-        self.runs, labels = {}, []
+    def __init__(self, root, a=None, b=None):
+        """a, b: run file names to open with (default: newest run and an earlier one like it)."""
+        self.runs, labels, by_file = {}, [], {}
         try:
             names = sorted((n for n in os.listdir(RUNS_DIR) if n.endswith(".json")), reverse=True)
         except OSError:
@@ -1595,6 +1875,7 @@ class CompareWindow:
                 label += " "
             self.runs[label] = run
             labels.append(label)
+            by_file[n] = label
             run["_same"] = (run.get("test"), run.get("part"), run.get("program"))
         if len(labels) < 2:
             messagebox.showinfo("Compare runs", "Record at least two runs first (every finished test is recorded).")
@@ -1608,8 +1889,9 @@ class CompareWindow:
         # B = newest run; A = the newest earlier run of the same test (or program), else the one before
         newest = self.runs[labels[0]]["_same"]
         older = next((lab for lab in labels[1:] if self.runs[lab]["_same"] == newest), labels[1])
+        pick_a, pick_b = by_file.get(a, older), by_file.get(b, labels[0])
         self.vars = []
-        for i, (name, default) in enumerate((("A", older), ("B", labels[0]))):
+        for i, (name, default) in enumerate((("A", pick_a), ("B", pick_b))):
             row = tk.Frame(top, bg=BG)
             row.pack(fill="x", padx=24, pady=2)
             tk.Label(row, text=name, bg=BG, fg=self.COLORS[i], font=(FONT, 14, "bold"), width=2).pack(side="left")
@@ -1762,7 +2044,9 @@ def _fine_timer(on):
 if __name__ == "__main__":
     _fine_timer(True)
     root = tk.Tk()
-    App(root)
+    app = App(root)
+    if "--ai-control" in sys.argv:
+        app.toggle_ai_control()
     try:
         root.mainloop()
     finally:

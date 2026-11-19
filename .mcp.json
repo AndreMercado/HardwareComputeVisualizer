@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hardware-visualizer": {
+      "command": "python",
+      "args": ["mcp_server.py"]
+    }
+  }
+}

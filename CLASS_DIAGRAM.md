@@ -30,12 +30,33 @@ classDiagram
         +spans_text(spans, limit)
         +report(findings)
     }
+    class ControlServer {
+        +token
+        +requests
+        +port
+        +httpd
+        +__init__(port)
+        +wait(args)
+        +close()
+    }
     class main["main.py"] {
         <<module>>
         +lighten(hex_color, amount)
         +mix(c1, c2, t)
         +chamfer(canvas, x0, y0, x1, y1, c, kwargs)
         -_fine_timer(on)
+    }
+    class _Dialogs {
+        +app
+        +confirm
+        +notes
+        +__init__()
+        -_ai()
+        -_note(kind, title, msg)
+        +showerror(title, msg, kwargs)
+        +showwarning(title, msg, kwargs)
+        +showinfo(title, msg, kwargs)
+        +askokcancel(title, msg, kwargs)
     }
     class Replay {
         +samples
@@ -74,6 +95,9 @@ classDiagram
     }
     class App {
         +root
+        +control
+        -_ai_queue
+        -_ai_busy
         +local_hw
         +hw
         +remote
@@ -110,10 +134,12 @@ classDiagram
         +dash_off
         -_lit
         +outer
+        +ai_banner
         +clock
         +target_lbl
         +btn_remote
         +btn_local
+        +btn_ai
         +canvas
         +shapes
         +bars
@@ -167,6 +193,13 @@ classDiagram
         -_build_core_strip()
         -_browse_program()
         +open_compare()
+        +toggle_ai_control()
+        -_flash(widget, times)
+        -_drain_control()
+        -_ai_describe(action, args)
+        -_find_test(name)
+        -_ai_state()
+        -_ai_do(action, args)
         -_load_remote_cfg()
         +ask_remote()
         -_connect(target)
@@ -185,7 +218,7 @@ classDiagram
         -_set_status(text, color)
         +start_test()
         -_disk_test_folder()
-        +start_replay()
+        +start_replay(path)
         -_save_run(result, duration, summary, findings)
         -_previous_run()
         -_sync_controls()
@@ -217,12 +250,19 @@ classDiagram
         +metric_menu
         +canvas
         +text
-        +__init__(root)
+        +__init__(root, a, b)
         -_pair()
         -_series(run, key)
         +refresh()
         +write_table(a, b, stats)
         +draw()
+    }
+    class mcp_server["mcp_server.py"] {
+        <<module>>
+        -_tool(name, desc, props, required)
+        +call_app(method, action, args)
+        +handle(msg)
+        +main()
     }
     class nvgpu["nvgpu.py"] {
         <<module>>
@@ -439,6 +479,7 @@ classDiagram
         +run_usercode(seconds, command)
     }
     App ..> CompareWindow : uses
+    App ..> ControlServer : uses
     App ..> Poller : uses
     App ..> RemoteError : uses
     App ..> RemoteTarget : uses
@@ -454,8 +495,10 @@ classDiagram
     Sampler ..> Gpu : uses
     main ..> agent : imports
     main ..> analysis : imports
+    main ..> control : imports
     main ..> remote : imports
     main ..> telemetry : imports
+    mcp_server ..> control : imports
     remote_agent ..> nvgpu : imports
     telemetry ..> nvgpu : imports
 ```

@@ -38,6 +38,11 @@ Result: remote machines over SSH (UC-2: `remote.py` + `remote_agent.py`, key log
 
 Result: YOUR CODE test (runs the user's own program locally or remotely), `analysis.py` bottleneck finder (serial code, GPU starved, PCIe / disk / RAM bound, idle) in every summary, COMPARE window for any two runs, per-core bars in the CPU box, GFLOPS for the ML test, a live FPS / sensor-rate readout with a 1 ms timer for real 60 FPS, and a fix for the 3D test (its camera passed through a sphere, making early frames fake-fast).
 
+### Session 7 - AI control (2026-11-18)
+1. "can you set it up where an ai can controll this and i can see it being controlled"
+
+Result: AI CONTROL button and `--ai-control` flag, `control.py` (local token-protected JSON API; every AI action shown in a purple banner, flashed and logged before it happens), `mcp_server.py` + `.mcp.json` so Claude can drive the app as MCP tools.
+
 ## 2. AI Benchmark Mode prompts (`agent.py`)
 
 ### Message sequence (`agent.py:main`)

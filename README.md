@@ -114,6 +114,27 @@ is needed for GPU and board readings.
   test and exits by itself. On exit it deletes its folder. THIS PC switches back and removes it.
 - The app never creates, starts, stops or pays for cloud machines.
 
+### AI control: let an AI drive the app while you watch
+
+Press **AI CONTROL** (top right) or start with `python main.py --ai-control`. Another program -
+for example Claude - can then pick parts and tests, press START / STOP, wait for results, read
+summaries and open COMPARE. You see everything it does: a purple banner says what it is doing,
+the button it presses flashes, every action is logged in purple, and each action waits a moment
+before happening so you can follow it. Press AI CONTROL again to take control back.
+
+- **Claude Code:** the project's `.mcp.json` registers `mcp_server.py`. Open `claude` in this folder,
+  approve the `hardware-visualizer` server once, then ask e.g. *"run the 3D test on the GPU and tell
+  me the frame time"* or *"run my script train.py and tell me where it wastes the hardware"*.
+- **Other MCP clients** (Claude Desktop...): add a server with command `python` and argument
+  `<this folder>\mcp_server.py`.
+- **Anything else:** plain HTTP on `127.0.0.1:8770` (endpoints listed at the top of `control.py`),
+  with the header `X-HCV-Token: <contents of control_token.txt>`.
+
+Safety: the API listens on this PC only and refuses requests without the token, which is new each
+time control is switched on, so a web page can't drive the app. While an AI is in control, pop-up
+questions don't block the window: they go to the log, and a "continue?" question (such as "no CPU
+temperature, so no thermal stop") is answered only if the AI explicitly confirms.
+
 ### Recorded runs: compare and replay
 
 Every finished run is saved as one file in `runs/`, with the machine it ran on and what the
@@ -136,6 +157,8 @@ bottleneck finder said.
 | `nvgpu.py` | NVIDIA GPU and PCIe link readings (NVML); used on this PC and by the remote agent. |
 | `workloads.py` | The tests. Each runs in its own process (Windows or Linux). |
 | `remote.py` | SSH connection to a remote machine: copies and drives the agent. |
+| `control.py` | AI CONTROL: the local, token-protected API another program uses to drive the window. |
+| `mcp_server.py` | MCP server that gives AI assistants the app's controls as tools (registered in `.mcp.json`). |
 | `analysis.py` | Bottleneck finder: reads a run's samples and says where the hardware sat unused. |
 | `remote_agent.py` | Runs on the remote machine: reads its sensors, runs the tests, stops itself if contact is lost. |
 | `agent.py` | The AI benchmark: talks to the local Ollama model and runs its tool calls. |
