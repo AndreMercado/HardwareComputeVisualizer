@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 OLLAMA = "http://127.0.0.1:11434"
-# first installed one wins; both are non-"thinking" models that support tool calls
+# first installed one wins; if none is, the smallest installed model that can call tools
 MODELS = ["llama3.2:3b", "qwen2.5:7b"]
 MAX_STEPS = 30
 RUN_TIMEOUT = 120  # seconds per run_python call
@@ -78,25 +78,42 @@ def emit(ev=None, **kw):
 
 
 def ollama_models():
-    """Installed model names, or None if Ollama isn't reachable."""
+    """Installed model names, smallest first, or None if Ollama isn't reachable."""
     try:
         with urllib.request.urlopen(OLLAMA + "/api/tags", timeout=2) as r:
-            return [m["name"] for m in json.load(r).get("models", [])]
+            models = json.load(r).get("models", [])
+        return [m["name"] for m in sorted(models, key=lambda m: m.get("size") or 0)]
     except Exception:
         return None
+
+
+def capabilities(model):
+    """What Ollama says the model can do, e.g. {'completion', 'tools', 'thinking'}."""
+    try:
+        req = urllib.request.Request(OLLAMA + "/api/show", json.dumps({"model": model}).encode(),
+                                     {"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return set(json.load(r).get("capabilities") or [])
+    except Exception:
+        return set()
 
 
 def pick_model(installed):
     for m in MODELS:
         if m in installed:
             return m
+    for m in installed:  # smallest first
+        if "tools" in capabilities(m):
+            return m
     return None
 
 
-def chat(model, messages, timeout):
-    body = json.dumps({"model": model, "messages": messages, "tools": TOOLS, "stream": False,
-                       "keep_alive": "10m",
-                       "options": {"num_ctx": 8192, "num_predict": 1500, "temperature": 0.3}}).encode()
+def chat(model, messages, timeout, think=None):
+    req = {"model": model, "messages": messages, "tools": TOOLS, "stream": False, "keep_alive": "10m",
+           "options": {"num_ctx": 8192, "num_predict": 1500, "temperature": 0.3}}
+    if think is not None:  # "thinking" models: off, so each step is a quick tool call, not an essay
+        req["think"] = think
+    body = json.dumps(req).encode()
     req = urllib.request.Request(OLLAMA + "/api/chat", body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)["message"]
@@ -175,13 +192,14 @@ def main():
     title, goal = GOALS[goal_id]
     messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": f"Task: {goal}"}]
     emit("say", text=f"Goal: {title}. Model: {model}.")
+    think = False if "thinking" in capabilities(model) else None
     nudges = 0
     try:
         for step in range(1, MAX_STEPS + 1):
             if time.time() >= deadline:
                 emit("timeout", text="time limit reached")
                 return
-            msg = chat(model, messages, max(5, min(180, deadline - time.time())))
+            msg = chat(model, messages, max(5, min(180, deadline - time.time())), think)
             messages.append(msg)
             if msg.get("content"):
                 emit("say", text=msg["content"].strip())
