@@ -46,12 +46,12 @@ Result: YOUR CODE test (runs the user's own program locally or remotely), `analy
 3. **Assistant:** model reply, usually a tool call such as `run_python(code)`.
 4. **Tool:** result as `exit code N / stdout / stderr` (cut to 2500 chars). Back to step 3.
 
-The loop runs up to 30 steps or until the time limit (10 min default). It ends when the model calls `finish(summary)`, replies with no tool call three times, or hits the step or time limit.
+The loop runs up to 30 steps or until the time limit (10 min default). It ends when the model calls `finish(summary)` (result: completed), replies without a tool call five times in a row, or hits the step or time limit (result: agent stopped without finishing / time limit reached).
 
-### System prompt (`SYSTEM`, `agent.py:45`)
+### System prompt (`SYSTEM`)
 > You are an autonomous agent working on a task on this Windows PC. You act only through the tools provided. You have a private working folder; run_python executes Python 3.13 code inside it. Installed: numpy and PyTorch (CUDA GPU available via torch.cuda). There is no internet, no shell and no access outside the working folder; if something is refused, adapt. Work in small steps, run code, read the output, fix errors. Keep each run under about 90 seconds. Output only appears if the code calls print() - a bare expression on the last line shows nothing. When the task is done, call finish with a 2-3 sentence summary of what you did and the numbers you measured.
 
-### Goals (`GOALS`, `agent.py:28`)
+### Goals (`GOALS`)
 | Id | Title | Task text |
 |---|---|---|
 | `classifier` | Train a tiny image classifier | Train a small neural-network image classifier. Generate a synthetic image dataset yourself (for example 10,000 28x28 images of simple shapes or patterns in 4 classes), train a small CNN with PyTorch on the GPU for several epochs, then report the test accuracy and the training time. |
@@ -66,13 +66,13 @@ To add a goal, add one entry to `GOALS`: `"id": ("Short title", "Full task text"
 ### Built-in extra messages
 | When | Text |
 |---|---|
-| Model replies with no tool call (max 2 times, 3rd stops the run) | `Continue using the tools, or call finish.` (user message) |
+| Model replies with no tool call (up to 4 times in a row, the 5th stops the run) | `You replied without calling a tool. Call run_python with the next code to run, or call finish if the task is done.` (user message) |
 | Code ran but printed nothing | `(The code printed nothing. Use print() to see values.)` appended to the tool result |
 | A run exceeds its time limit | `TIMEOUT: the run was stopped after N s. Use less work per run.` |
 | Sandbox refuses an action | `BLOCKED: <reason>` |
 
 ### Model settings
-Models tried in order: `llama3.2:3b`, `qwen2.5:7b`. `num_ctx` 8192, `num_predict` 1500, `temperature` 0.3.
+Models tried in order: `llama3.2:3b`, `qwen2.5:7b`; if neither is installed, the smallest installed model that Ollama says can call tools. For "thinking" models, thinking is turned off (`think: false`) so each step is a quick tool call. `num_ctx` 8192, `num_predict` 1500, `temperature` 0.3.
 
 ## 3. Where else to look
 - Benchmark sequence (start -> poll -> render -> stop): `SRS_HardwareComputeVisualizer.md` section 3; page 9 of `Group19_SRS_HardwareComputeVisualizer.pdf`.

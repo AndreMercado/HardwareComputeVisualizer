@@ -18,7 +18,8 @@ python main.py
 Optional extras:
 - **PyTorch with CUDA** - needed for the ML test and for the AI benchmark's GPU tasks; makes the
   PCIe test measure the link's full speed (without it, the PCIe test uses OpenGL and moves less).
-- **Ollama** running locally with `llama3.2:3b` (or `qwen2.5:7b`) - needed for the AI benchmark.
+- **Ollama** running locally with a model that can call tools - needed for the AI benchmark. It uses
+  `llama3.2:3b` or `qwen2.5:7b` if installed, otherwise the smallest installed tool-calling model.
 - **LibreHardwareMonitor** running as administrator - the only way Windows gives out CPU and
   chipset temperatures (and AMD / Intel GPU temperatures). The app reads what LHM publishes; it
   never needs admin itself. Without LHM these show "unavailable" and there is no CPU thermal stop
