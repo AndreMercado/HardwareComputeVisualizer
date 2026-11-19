@@ -489,6 +489,7 @@ class App:
         self.ai_steps = 0
         self.ai_blocked = 0
         self.ai_done_text = None
+        self.ai_stop_text = None
         self.duration = TEST_SECONDS
         self.is_ai = False
         self.is_code = False
@@ -957,7 +958,7 @@ class App:
         self.lost_since = None
         self.msg_unavail = set()
         self.ai_steps = self.ai_blocked = 0
-        self.ai_done_text = None
+        self.ai_done_text = self.ai_stop_text = None
         while not self.events.empty():
             self.events.get_nowait()
         if is_ai:
@@ -1138,6 +1139,9 @@ class App:
                 self._log(f"✔ {text}", "done")
             elif ev == "timeout":
                 self._log(f"⏱ {text}", "blocked")
+            elif ev == "stopped":  # quit without calling finish: not a completed task
+                self.ai_stop_text = text
+                self._log(f"■ {text}", "blocked")
             elif ev == "result":
                 self._log("  " + text.replace("\n", "\n  "), "result")
             elif ev == "out":
@@ -1281,7 +1285,8 @@ class App:
                 elif self.wl_error:
                     self.stop_test(f"failed — {self.wl_error}")
                 elif self.ai_done_text is None:
-                    self.stop_test("time limit reached" if elapsed >= self.duration - 2 else "agent stopped")
+                    self.stop_test("time limit reached" if elapsed >= self.duration - 2 else
+                                   f"agent stopped without finishing ({self.ai_stop_text or 'no reason given'})")
                 else:
                     self.stop_test("completed")
             elif not self.wl_got_data:

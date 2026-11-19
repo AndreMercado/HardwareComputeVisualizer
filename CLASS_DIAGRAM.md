@@ -9,8 +9,9 @@ classDiagram
         <<module>>
         +emit(ev, kwargs)
         +ollama_models()
+        +capabilities(model)
         +pick_model(installed)
-        +chat(model, messages, timeout)
+        +chat(model, messages, timeout, think)
         +safe_path(workdir, rel)
         +tail(s, n)
         +run_python(workdir, step, code, deadline)
@@ -148,6 +149,7 @@ classDiagram
         +ai_steps
         +ai_blocked
         +ai_done_text
+        +ai_stop_text
         +duration
         +is_ai
         +is_code

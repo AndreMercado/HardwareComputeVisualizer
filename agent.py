@@ -6,7 +6,8 @@ A local Ollama model (127.0.0.1 only) is given a goal and a few tools and works
 out for itself what to do - nothing is scripted. Any Python it writes runs via
 sandbox_run.py (no network, no programs, files only in <workdir>). One JSON
 line per event goes to stdout for the UI:
-    {"ev": "say"|"tool"|"result"|"blocked"|"done"|"timeout", "text": ...}
+    {"ev": "say"|"tool"|"result"|"blocked"|"done"|"stopped"|"timeout", "text": ...}
+("done" only when the model called finish; "stopped" when it quit without doing so)
     {"error": "..."}    (then exit code 2)
 """
 import json
@@ -21,6 +22,7 @@ OLLAMA = "http://127.0.0.1:11434"
 # first installed one wins; if none is, the smallest installed model that can call tools
 MODELS = ["llama3.2:3b", "qwen2.5:7b"]
 MAX_STEPS = 30
+MAX_NUDGES = 4  # replies in a row without a tool call before the run counts as abandoned
 RUN_TIMEOUT = 120  # seconds per run_python call
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -206,11 +208,14 @@ def main():
             calls = msg.get("tool_calls") or []
             if not calls:
                 nudges += 1
-                if nudges > 2:
-                    emit("done", text=(msg.get("content") or "agent stopped without finishing").strip())
+                if nudges > MAX_NUDGES:
+                    emit("stopped", text="the model stopped calling tools without finishing the task")
                     return
-                messages.append({"role": "user", "content": "Continue using the tools, or call finish."})
+                messages.append({"role": "user", "content":
+                                 "You replied without calling a tool. Call run_python with the next code to "
+                                 "run, or call finish if the task is done."})
                 continue
+            nudges = 0
             for c in calls:
                 fn = c["function"]
                 name, args = fn["name"], fn.get("arguments") or {}
@@ -234,7 +239,7 @@ def main():
                     result = f"tool error: {type(e).__name__}: {e}"
                 emit("result", text=tail(result, 600))
                 messages.append({"role": "tool", "content": tail(result)})
-        emit("done", text="step limit reached")
+        emit("stopped", text=f"step limit reached ({MAX_STEPS} steps)")
     except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
         if time.time() >= deadline - 5:  # the limit cut a model call short, not an Ollama failure
             emit("timeout", text="time limit reached")
