@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hardware Compute Visualizer — SRS</title>
+<style>
+  :root {
+    --navy: #1f3864;
+    --ink: #1a1a1a;
+    --muted: #555;
+    --rule: #b8b8b8;
+    --stripe: #f2f2f2;
+    --cpu: #2563eb;
+    --gpu: #16a34a;
+    --ram: #ca8a04;
+  }
+  @page {
+    size: Letter;
+    margin: 0.85in 0.9in 0.85in 0.9in;
+    @bottom-center { content: counter(page); font-family: Calibri, "Segoe UI", sans-serif; font-size: 9pt; color: #777; }
+  }
+  @page :first { @bottom-center { content: none; } }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: Calibri, "Segoe UI", Carlito, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    color: var(--ink);
+    background: #fff;
+    margin: 0;
+  }
+  h1, h2, h3, h4 { color: var(--navy); break-after: avoid; }
+  h2.part {
+    font-size: 19pt;
+    margin: 26pt 0 12pt;
+    padding-bottom: 4pt;
+    border-bottom: 1.5pt solid var(--navy);
+  }
+  h2.part.newpage { break-before: page; margin-top: 0; }
+  h3 { font-size: 12.5pt; margin: 16pt 0 6pt; }
+  p { margin: 0 0 8pt; }
+  ul, ol { margin: 0 0 8pt; padding-left: 20pt; }
+  li { margin-bottom: 2pt; }
+  code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 9.5pt; background: #eee; padding: 0 3pt; border-radius: 2pt; }
+  .note { border: 1pt solid var(--rule); padding: 7pt 10pt; margin: 8pt 0 10pt; }
+
+  /* cover */
+  .cover { height: 9.2in; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; break-after: page; }
+  .cover h1 { font-size: 26pt; margin: 0 0 8pt; }
+  .cover .sub { font-size: 13pt; margin-bottom: 48pt; }
+  .cover .by { font-weight: bold; margin-bottom: 6pt; }
+  .cover .names div { font-size: 11.5pt; margin-bottom: 4pt; }
+  .cover .meta { margin-top: 48pt; font-size: 9.5pt; color: #333; line-height: 1.6; }
+
+  /* TOC */
+  .toc-page { break-after: page; }
+  .toc-page h2 { font-size: 19pt; margin: 0 0 18pt; }
+  .toc { display: grid; grid-template-columns: 1fr 1fr; column-gap: 34pt; }
+  .toc .grp { margin-bottom: 12pt; }
+  .toc .grp > .h { font-weight: bold; font-size: 10.5pt; margin-bottom: 3pt; display: flex; }
+  .toc .row { display: flex; font-size: 9.8pt; padding-left: 14pt; line-height: 1.6; }
+  .toc .row .t, .toc .grp > .h .t { flex: 0 1 auto; }
+  .toc .dots { flex: 1; border-bottom: 1pt dotted #999; margin: 0 4pt 4pt; }
+  .toc .pg { flex: 0 0 auto; }
+
+  /* tables */
+  table.std { width: 100%; border-collapse: collapse; margin: 6pt 0 12pt; font-size: 9.8pt; }
+  table.std th { background: var(--navy); color: #fff; text-align: left; padding: 5pt 7pt; font-weight: bold; }
+  table.std td { border: 1pt solid var(--rule); padding: 5pt 7pt; vertical-align: top; }
+  table.std tr:nth-child(even) td { background: var(--stripe); }
+  table.std tr { break-inside: avoid; }
+
+  /* use cases */
+  .uc { break-inside: avoid; border-bottom: 1pt solid var(--rule); padding: 4pt 0 10pt; margin-bottom: 10pt; }
+  .uc h4 { margin: 4pt 0 6pt; font-size: 11pt; color: var(--ink); }
+  .uc h4 .id { color: var(--navy); margin-right: 6pt; }
+  .uc h4 em { font-weight: normal; color: var(--muted); }
+  .uc table { border-collapse: collapse; width: 100%; font-size: 9.8pt; }
+  .uc td { padding: 2pt 0; vertical-align: top; }
+  .uc td:first-child { width: 88pt; font-weight: bold; }
+  .uc ol { margin: 0; padding-left: 16pt; }
+  .uc .req b { color: var(--navy); }
+  .uc .todo { display: block; margin-top: 3pt; color: var(--muted); font-style: italic; }
+
+  /* figures */
+  figure { margin: 10pt 0 14pt; border: 1pt solid var(--rule); padding: 10pt 12pt 8pt; break-inside: avoid; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption { font-style: italic; font-size: 9pt; color: #333; text-align: center; margin-top: 6pt; }
+  figure.dark { background: #0f172a; border-color: #0f172a; }
+  figure.dark figcaption { color: #cbd5e1; }
+  svg text { font-family: Calibri, "Segoe UI", sans-serif; }
+  .keep { break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ================= COVER ================= -->
+<section class="cover">
+  <h1>Hardware Compute Visualizer</h1>
+  <div class="sub">Software Requirements Specification</div>
+  <div class="by">Prepared by:</div>
+  <div class="names"><div>Andre Mercado</div><div>Zachary Taylor</div></div>
+  <div class="meta">
+    September 24, 2026<br>
+    CS 4398 · Group 19
+  </div>
+</section>
+
+<!-- ================= TOC ================= -->
+<section class="toc-page">
+  <h2>Table of Contents</h2>
+  <div class="toc">
+    <div>
+      <div class="grp">
+        <div class="h"><span class="t">I. Introduction</span><span class="dots"></span><span class="pg" data-k="p1"></span></div>
+        <div class="row"><span class="t">Purpose</span><span class="dots"></span><span class="pg" data-k="p1"></span></div>
+        <div class="row"><span class="t">Scope</span><span class="dots"></span><span class="pg" data-k="p1"></span></div>
+        <div class="row"><span class="t">Intended Audience</span><span class="dots"></span><span class="pg" data-k="aud"></span></div>
+        <div class="row"><span class="t">Definitions, Acronyms, Abbreviations</span><span class="dots"></span><span class="pg" data-k="defs"></span></div>
+        <div class="row"><span class="t">References</span><span class="dots"></span><span class="pg" data-k="refs"></span></div>
+        <div class="row"><span class="t">Document Conventions</span><span class="dots"></span><span class="pg" data-k="conv"></span></div>
+      </div>
+      <div class="grp">
+        <div class="h"><span class="t">II. Overall Description</span><span class="dots"></span><span class="pg" data-k="p2"></span></div>
+        <div class="row"><span class="t">Product Perspective</span><span class="dots"></span><span class="pg" data-k="p2"></span></div>
+        <div class="row"><span class="t">Product Functions</span><span class="dots"></span><span class="pg" data-k="func"></span></div>
+        <div class="row"><span class="t">User Characteristics</span><span class="dots"></span><span class="pg" data-k="users"></span></div>
+        <div class="row"><span class="t">Operating Environment</span><span class="dots"></span><span class="pg" data-k="env"></span></div>
+        <div class="row"><span class="t">Design and Implementation Constraints</span><span class="dots"></span><span class="pg" data-k="cons"></span></div>
+        <div class="row"><span class="t">Assumptions and Dependencies</span><span class="dots"></span><span class="pg" data-k="assm"></span></div>
+      </div>
+      <div class="grp">
+        <div class="h"><span class="t">IV. Non-Functional Requirements</span><span class="dots"></span><span class="pg" data-k="p4"></span></div>
+      </div>
+      <div class="grp">
+        <div class="h"><span class="t">V. Requirements Traceability</span><span class="dots"></span><span class="pg" data-k="p5"></span></div>
+      </div>
+      <div class="grp">
+        <div class="h"><span class="t">VI. Appendix — Roadmap</span><span class="dots"></span><span class="pg" data-k="p6"></span></div>
+        <div class="row"><span class="t">MVP Scope</span><span class="dots"></span><span class="pg" data-k="p6"></span></div>
+        <div class="row"><span class="t">Stretch Goals</span><span class="dots"></span><span class="pg" data-k="stretch"></span></div>
+        <div class="row"><span class="t">Ultimate Goal (Beyond Stretch)</span><span class="dots"></span><span class="pg" data-k="ult"></span></div>
+      </div>
+    </div>
+    <div>
+      <div class="grp">
+        <div class="h"><span class="t">III. Functional Requirements</span><span class="dots"></span><span class="pg" data-k="p3"></span></div>
+        <div class="row"><span class="t">Summary &amp; Use Case Diagram</span><span class="dots"></span><span class="pg" data-k="p3"></span></div>
+        <div class="row"><span class="t">System Architecture</span><span class="dots"></span><span class="pg" data-k="arch"></span></div>
+        <div class="row"><span class="t">Benchmark Sequence</span><span class="dots"></span><span class="pg" data-k="seq"></span></div>
+        <div class="row"><span class="t">Workload / Component Matrix</span><span class="dots"></span><span class="pg" data-k="matrix"></span></div>
+        <div class="row"><span class="t">Component Selection (UC-1 – UC-4)</span><span class="dots"></span><span class="pg" data-k="sel"></span></div>
+        <div class="row"><span class="t">Benchmark Execution (UC-5 – UC-9)</span><span class="dots"></span><span class="pg" data-k="exec"></span></div>
+        <div class="row"><span class="t">Telemetry &amp; Visualization (UC-10, UC-11)</span><span class="dots"></span><span class="pg" data-k="tele"></span></div>
+        <div class="row"><span class="t">Error Handling &amp; Safety (UC-12 – UC-14)</span><span class="dots"></span><span class="pg" data-k="err"></span></div>
+        <div class="row"><span class="t">External Interface Requirements</span><span class="dots"></span><span class="pg" data-k="ext"></span></div>
+        <div class="row"><span class="t">Interface Wireframe</span><span class="dots"></span><span class="pg" data-k="wire"></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= I. INTRODUCTION ================= -->
+<h2 class="part" style="margin-top:0">I. Introduction</h2>
+
+<figure>
+<svg viewBox="0 0 700 190" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+  </defs>
+  <!-- RAM -->
+  <rect x="20" y="40" width="170" height="80" rx="4" fill="var(--ram)" stroke="#333" stroke-width="1"/>
+  <text x="105" y="78" text-anchor="middle" fill="#fff" font-weight="bold" font-size="15">RAM</text>
+  <text x="105" y="97" text-anchor="middle" fill="#fff" font-size="11">system memory</text>
+  <!-- CPU -->
+  <rect x="265" y="40" width="170" height="80" rx="4" fill="var(--cpu)" stroke="#333" stroke-width="1"/>
+  <text x="350" y="78" text-anchor="middle" fill="#fff" font-weight="bold" font-size="15">CPU</text>
+  <text x="350" y="97" text-anchor="middle" fill="#fff" font-size="11">runs workloads</text>
+  <!-- GPU -->
+  <rect x="510" y="40" width="170" height="80" rx="4" fill="var(--gpu)" stroke="#333" stroke-width="1"/>
+  <text x="595" y="66" text-anchor="middle" fill="#fff" font-weight="bold" font-size="15">GPU</text>
+  <rect x="545" y="80" width="100" height="28" rx="3" fill="#0f5f2c" stroke="#fff" stroke-width="0.8"/>
+  <text x="595" y="99" text-anchor="middle" fill="#fff" font-size="11">VRAM</text>
+  <!-- links -->
+  <line x1="192" y1="80" x2="263" y2="80" stroke="#333" stroke-width="1.4" marker-start="url(#a0)" marker-end="url(#a0)"/>
+  <text x="228" y="72" text-anchor="middle" font-size="10.5" fill="#333">memory bus</text>
+  <line x1="437" y1="80" x2="508" y2="80" stroke="#333" stroke-width="1.4" marker-start="url(#a0)" marker-end="url(#a0)"/>
+  <text x="472" y="72" text-anchor="middle" font-size="10.5" fill="#333">PCIe</text>
+  <!-- telemetry band -->
+  <line x1="20" y1="150" x2="680" y2="150" stroke="#888" stroke-dasharray="4 3"/>
+  <line x1="105" y1="122" x2="105" y2="148" stroke="#888" stroke-dasharray="3 3"/>
+  <line x1="350" y1="122" x2="350" y2="148" stroke="#888" stroke-dasharray="3 3"/>
+  <line x1="595" y1="122" x2="595" y2="148" stroke="#888" stroke-dasharray="3 3"/>
+  <text x="350" y="170" text-anchor="middle" font-size="11" fill="#333">read-only telemetry · 10 Hz+ · &lt;200 ms latency → 60 FPS animation</text>
+</svg>
+<figcaption>Fig. 0 — The three MVP components. The CPU reads and writes system RAM over the memory bus and sends commands and data to the GPU over PCIe; the GPU keeps its working data in its own VRAM. All three are polled read-only, and testing the local PC needs no internet connection.</figcaption>
+</figure>
+
+<h3 data-k="p1">1. Purpose</h3>
+<p>This document specifies the requirements for the Hardware Compute Visualizer, a desktop application that gives the user a live, visual, truthful picture of what their PC hardware (CPU, GPU, and RAM, and later motherboard/chipset and storage) is doing while it executes real workloads. It is intended for both the users and the developers of the system.</p>
+
+<h3>2. Scope</h3>
+<p>The system shall:</p>
+<ul>
+  <li>Display a visual diagram of the PC's hardware components as selectable parts.</li>
+  <li>Allow the user to pick a target machine — the local PC, or a cloud machine the user rents, reached over SSH — then a component and a workload (2D or 3D) to run against it.</li>
+  <li>Execute the selected workload for real on the selected hardware — never a simulated or scripted result.</li>
+  <li>Poll live hardware telemetry and animate the diagram in real time based on that telemetry.</li>
+  <li>Display live stats for the running workload: utilization, memory bandwidth, and temperature at minimum; frame time for 3D workloads; power draw and FLOPS where the hardware and workload make them available.</li>
+  <li>Provide an "AI Benchmark Mode" in which a locally run AI agent performs an open-ended task and the user observes real, unscripted hardware behavior.</li>
+</ul>
+<div class="note"><b>Out of scope:</b> driver or firmware modification, overclocking, changing power states, clock speeds, or fan curves, any network dependency when testing the local PC, and renting, starting, stopping, or paying for cloud machines (the user manages these through their provider). A fixed AI/ML workload as a third test type is a stretch goal (VI.2), not part of the MVP.</div>
+
+<h3 data-k="aud">3. Intended Audience</h3>
+<p>This document is intended for the developers building the application and for anyone evaluating what the finished product does. Developers should read Parts III and IV closely; evaluators can rely on Part II for a summary of what the app does.</p>
+
+<h3 data-k="defs">4. Definitions, Acronyms, Abbreviations</h3>
+<table class="std">
+  <tr><th style="width:26%">Term</th><th>Definition</th></tr>
+  <tr><td>Component / Part</td><td>A piece of PC hardware represented in the diagram: CPU, GPU, RAM (MVP), and later motherboard/chipset and storage.</td></tr>
+  <tr><td>System RAM</td><td>Main memory installed on the motherboard, used by the CPU and for transfers to the GPU. Shown as the "RAM" part.</td></tr>
+  <tr><td>VRAM</td><td>Dedicated memory on the graphics card. Reported as part of the GPU, not as the RAM part.</td></tr>
+  <tr><td>Telemetry</td><td>Real-time hardware metrics read from the system: utilization, temperature, power draw, clock speed, memory usage, etc.</td></tr>
+  <tr><td>Workload</td><td>A benchmark test executed against a selected component. MVP workloads are a 2D workload and a 3D workload.</td></tr>
+  <tr><td>AI Benchmark Mode</td><td>A mode where a locally run AI agent attempts an open-ended task on the hardware instead of a fixed benchmark.</td></tr>
+  <tr><td>AI Agent</td><td>The program that drives AI Benchmark Mode: a locally hosted language model that plans and executes a task using a restricted set of tools.</td></tr>
+  <tr><td>FLOPS</td><td>Floating Point Operations Per Second. Calculated by the workload itself (operations performed ÷ elapsed time); it is not read from a sensor.</td></tr>
+  <tr><td>Frame Time</td><td>The time taken to render a single frame, measured by the 3D workload's own render loop.</td></tr>
+  <tr><td>Memory Bandwidth</td><td>Bytes moved to/from memory per second. Measured by the workload (bytes transferred ÷ elapsed time) when OS/hardware counters are unavailable.</td></tr>
+  <tr><td>Latency (telemetry)</td><td>Time from a hardware sample being taken to that sample being reflected on screen.</td></tr>
+  <tr><td>MVP</td><td>Minimum Viable Product — the committed feature set for the first working version.</td></tr>
+  <tr><td>Polling Rate</td><td>The frequency at which telemetry is read from hardware, measured in Hz.</td></tr>
+  <tr><td>NVML</td><td>NVIDIA Management Library, the vendor interface used to read NVIDIA GPU telemetry.</td></tr>
+  <tr><td>Target Machine</td><td>The computer whose hardware is being tested and shown: the local PC (default) or a remote cloud machine.</td></tr>
+  <tr><td>Remote Target</td><td>A cloud machine the user rents from a provider (e.g., RunPod, AWS EC2, Lambda Labs) and connects to over SSH.</td></tr>
+  <tr><td>Remote Agent</td><td>A small script the app copies to a remote target. It runs the workloads and reads telemetry there, and streams results back over SSH.</td></tr>
+  <tr><td>SSH</td><td>Secure Shell, the encrypted protocol used to log in to and communicate with a remote target.</td></tr>
+</table>
+
+<h3 data-k="refs">5. References</h3>
+<ul>
+  <li>IEEE Std 830-1998, <i>IEEE Recommended Practice for Software Requirements Specifications</i> (outline followed by this document).</li>
+  <li>ISO/IEC/IEEE 29148:2018, <i>Systems and software engineering — Life cycle processes — Requirements engineering</i> (successor to IEEE 830).</li>
+</ul>
+
+<h3 data-k="conv">6. Document Conventions</h3>
+<p>This document follows the outline format of IEEE Std 830. Functional requirements are written as use cases with a priority, trigger, precondition, basic path, and requirement. Each requirement carries an ID (FR-n for functional, NFR-n for non-functional) so it can be traced to a verification method in Part V. "Shall" marks a mandatory requirement; "should" marks a recommendation.</p>
+
+<!-- ================= II. OVERALL DESCRIPTION ================= -->
+<h2 class="part">II. Overall Description</h2>
+
+<h3 data-k="p2">1. Product Perspective</h3>
+<p>The Hardware Compute Visualizer is a standalone desktop application (built in Python with Tkinter) that combines a visual hardware diagram, a real-time telemetry pipeline, and a benchmark runner. A normal system monitor only reports a changing number; this application ties that number to a visible part of the PC shown doing the work. Tests can run on the local PC or on a cloud machine the user rents, so the app can also show hardware the user does not own.</p>
+
+<h3 data-k="func">2. Product Functions</h3>
+<ul>
+  <li>Connect to a target machine — the local PC by default, or a rented cloud machine over SSH — and detect its CPU, GPU, and RAM.</li>
+  <li>Render a diagram of the PC with CPU, GPU, and RAM (MVP) as selectable, distinctly colored parts.</li>
+  <li>Let the user select a component by clicking it in the diagram or through its search box.</li>
+  <li>Let the user pick a 2D or 3D workload, or AI Benchmark Mode, for the selected component.</li>
+  <li>Run that workload for real on the actual hardware, and let the user stop it at any time.</li>
+  <li>Poll telemetry for the active component(s), including components they depend on (e.g., RAM feeding the GPU), at 10 Hz or greater with under 200 ms latency.</li>
+  <li>Animate the diagram (brightness/motion) at 60 FPS, driven by that live telemetry.</li>
+  <li>Display a live stat readout appropriate to the running test and a summary when the test ends.</li>
+  <li>Abort any test automatically if a component exceeds a safe temperature.</li>
+</ul>
+
+<h3 data-k="users">3. User Characteristics</h3>
+<p>The intended user is a PC enthusiast, hobbyist builder, or student who wants to see what their hardware is doing under load. Basic familiarity with PC components and desktop applications is expected; systems-programming or benchmarking expertise is not required.</p>
+
+<h3 data-k="env">4. Operating Environment</h3>
+<table class="std">
+  <tr><th style="width:22%">Item</th><th>Requirement</th></tr>
+  <tr><td>Operating system</td><td>Windows 10 or 11, 64-bit.</td></tr>
+  <tr><td>Runtime</td><td>Python 3.11 or later.</td></tr>
+  <tr><td>Hardware</td><td>The CPU, GPU, and RAM installed in the machine running the app. Minimum 4 CPU cores and 8 GB of RAM; a GPU supporting OpenGL 3.3 or later for the 3D workload.</td></tr>
+  <tr><td>GPU vendors</td><td>NVIDIA GPUs are fully supported in the MVP (via NVML). AMD and Intel GPUs are best-effort; any metric that cannot be read shows "unavailable" (UC-12).</td></tr>
+  <tr><td>Privileges</td><td>Runs as a standard user. Some sensors (notably CPU temperature and power) are only exposed on Windows through a helper that requires administrator rights; without it those metrics show "unavailable".</td></tr>
+  <tr><td>Remote target (optional)</td><td>Linux cloud machine (Ubuntu 22.04+) with an NVIDIA GPU, Python 3.11+, and SSH key access, from any provider (e.g., RunPod, AWS EC2, Lambda Labs).</td></tr>
+  <tr><td>Network</td><td>None when testing the local PC (including AI Benchmark Mode); a stable internet connection when testing a remote target.</td></tr>
+</table>
+
+<h3 data-k="cons">5. Design and Implementation Constraints</h3>
+<ul>
+  <li>Telemetry access is strictly read-only. The application shall never modify driver settings, clock speeds, fan curves, or power states.</li>
+  <li>When testing the local PC, the core benchmark/visual loop, including AI Benchmark Mode, shall function with no network connection. Remote mode needs a network connection only between the app and the cloud machine.</li>
+  <li>Diagram animation shall sustain 60 FPS during an active test.</li>
+  <li>Telemetry for MVP components shall be polled at 10 Hz or greater with under 200 ms latency on the local PC, and under 500 ms on a cloud machine to allow for network delay.</li>
+  <li>Telemetry polling and workloads shall run off the UI thread so they cannot stall rendering.</li>
+  <li>Tkinter's Canvas is not designed for 60 FPS animation. If profiling shows it cannot hold 60 FPS, the diagram renderer may move to a faster toolkit (e.g., pygame or PySide6) without changing these requirements.</li>
+</ul>
+
+<h3 data-k="assm">6. Assumptions and Dependencies</h3>
+<ul>
+  <li>The OS and vendor libraries expose utilization and memory counters for the installed hardware without kernel drivers.</li>
+  <li>NVIDIA telemetry depends on an installed NVIDIA driver that ships NVML.</li>
+  <li>AI Benchmark Mode depends on Ollama with the Llama 3.2 3B model installed locally. The model is downloaded once during setup; no network connection is needed after that.</li>
+  <li>Cloud machines are assumed to run Linux (Ubuntu 22.04 or later) with Python 3.11+ and the NVIDIA driver installed, and to allow SSH key login. Because they are virtual machines, CPU temperature and power are usually hidden and will show "unavailable". The user creates, starts, stops, and pays for the cloud machine through their provider (e.g., RunPod, AWS EC2, Lambda Labs).</li>
+  <li>The 3D workload depends on a working OpenGL 3.3 driver; on a headless cloud machine it renders off-screen through EGL.</li>
+  <li>The user does not run other heavy workloads during a test; the app reports what the hardware is doing, which includes other programs' load.</li>
+</ul>
+
+<!-- ================= III. FUNCTIONAL REQUIREMENTS ================= -->
+<h2 class="part">III. Functional Requirements</h2>
+
+<h3 data-k="p3">1. Summary &amp; Use Case Diagram</h3>
+<p>The user picks a hardware part, picks a workload, and watches a real-time, truthful visualization of that hardware doing the work. Two actors drive the app: the <b>User</b> (selecting parts, starting and stopping tests) and the <b>AI Agent</b> (acting inside AI Benchmark Mode once the user starts it).</p>
+
+<figure>
+<svg viewBox="0 0 720 395" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333" stroke-width="1.3"/></marker>
+  </defs>
+  <rect x="145" y="12" width="440" height="375" fill="none" stroke="#888" stroke-width="1"/>
+  <text x="365" y="28" text-anchor="middle" font-size="10" fill="#555" letter-spacing="0.5">HARDWARE COMPUTE VISUALIZER</text>
+  <g stroke="#222" stroke-width="1.5" fill="none">
+    <circle cx="70" cy="176" r="12"/><line x1="70" y1="188" x2="70" y2="226"/><line x1="48" y1="200" x2="92" y2="200"/>
+    <line x1="70" y1="226" x2="54" y2="252"/><line x1="70" y1="226" x2="86" y2="252"/>
+  </g>
+  <text x="70" y="270" text-anchor="middle" font-size="12" font-weight="bold">User</text>
+  <g stroke="#222" stroke-width="1.5" fill="none">
+    <circle cx="660" cy="41" r="12"/><line x1="660" y1="53" x2="660" y2="91"/><line x1="638" y1="65" x2="682" y2="65"/>
+    <line x1="660" y1="91" x2="644" y2="117"/><line x1="660" y1="91" x2="676" y2="117"/>
+  </g>
+  <text x="660" y="135" text-anchor="middle" font-size="12" font-weight="bold">AI Agent</text>
+  <g fill="#fff" stroke="#222" stroke-width="1.2">
+    <ellipse cx="255" cy="65" rx="92" ry="20"/><ellipse cx="255" cy="120" rx="92" ry="20"/><ellipse cx="255" cy="175" rx="92" ry="20"/>
+    <ellipse cx="255" cy="230" rx="92" ry="20"/><ellipse cx="255" cy="285" rx="92" ry="20"/><ellipse cx="255" cy="340" rx="92" ry="20"/>
+    <ellipse cx="485" cy="230" rx="85" ry="20" stroke-dasharray="4 3"/><ellipse cx="485" cy="345" rx="92" ry="22"/>
+  </g>
+  <g font-size="11.5" text-anchor="middle">
+    <text x="255" y="69">Run AI Benchmark Mode</text><text x="255" y="124">Connect to Cloud Machine</text>
+    <text x="255" y="179">Select Component</text><text x="255" y="234">Run 2D / 3D Workload</text>
+    <text x="255" y="289">Stop Test</text><text x="255" y="344">View Live Telemetry</text>
+    <text x="485" y="234">Poll Telemetry</text><text x="485" y="342">Handle Errors &amp;</text><text x="485" y="356">Thermal Abort</text>
+  </g>
+  <g stroke="#222" stroke-width="1">
+    <line x1="92" y1="196" x2="163" y2="67"/><line x1="92" y1="197" x2="163" y2="122"/><line x1="92" y1="199" x2="163" y2="176"/>
+    <line x1="92" y1="201" x2="163" y2="230"/><line x1="92" y1="203" x2="163" y2="284"/><line x1="92" y1="204" x2="163" y2="338"/>
+    <line x1="638" y1="65" x2="347" y2="65"/>
+  </g>
+  <g stroke="#333" stroke-width="1" stroke-dasharray="5 3" fill="none">
+    <line x1="340" y1="75" x2="430" y2="213" marker-end="url(#a1)"/>
+    <line x1="347" y1="230" x2="398" y2="230" marker-end="url(#a1)"/>
+    <line x1="342" y1="334" x2="430" y2="247" marker-end="url(#a1)"/>
+    <line x1="485" y1="323" x2="485" y2="252" marker-end="url(#a1)"/>
+  </g>
+  <g font-size="9.5" fill="#444">
+    <text x="400" y="150">«include»</text><text x="350" y="222">«include»</text>
+    <text x="400" y="305">«include»</text><text x="491" y="292">«extend»</text>
+  </g>
+</svg>
+<figcaption>Fig. 1 — Use case diagram. The user chooses the target machine (local or cloud) and drives selection, tests, and stopping; the AI agent acts only inside AI Benchmark Mode. Every running test and the live view include telemetry polling, which is extended by error handling and the thermal-safety abort.</figcaption>
+</figure>
+
+<p class="keep">Tools used:</p>
+<ul>
+  <li>Python as the primary implementation language.</li>
+  <li>Tkinter for the user interface.</li>
+  <li>Paramiko (SSH) for connecting to rented cloud machines.</li>
+  <li><code>psutil</code> for CPU and RAM utilization and memory usage.</li>
+  <li><code>pynvml</code> (NVML) for NVIDIA GPU utilization, VRAM, temperature, and power.</li>
+  <li>LibreHardwareMonitor (optional, requires administrator) for CPU temperature and power.</li>
+  <li>Real, runnable 2D/3D workloads written for this project, which also report their own frame time, FLOPS, and bytes moved.</li>
+  <li>Ollama running Llama 3.2 3B (4-bit quantized, about 2 GB) as the AI agent's local model.</li>
+</ul>
+
+<h3 data-k="arch">2. System Architecture</h3>
+<p>When the user starts a test, the UI layer sends <code>start(test, part)</code> to the <b>Benchmark Runner</b> and <code>start(parts)</code> to the <b>Telemetry Poller</b>, telling it which component(s) to watch. The runner executes the workload on the real hardware. On a cloud machine, the runner and poller run inside a small remote agent on that machine and send results back over SSH. The poller reads sensors at 10 Hz or greater (read-only) and passes cleaned values to the <b>Diagram Renderer / Stat Readout</b>, which draws at 60 FPS. When the test stops or completes, the runner reports completion and the poller stops.</p>
+
+<figure>
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+  </defs>
+  <g fill="#fff" stroke="#333" stroke-width="1.2">
+    <rect x="20" y="30" width="190" height="70"/>
+    <rect x="290" y="30" width="190" height="70"/>
+    <rect x="290" y="205" width="190" height="70"/>
+    <rect x="20" y="205" width="190" height="70"/>
+    <rect x="570" y="18" width="130" height="235" fill="none" stroke="#999"/>
+  </g>
+  <g text-anchor="middle">
+    <text x="115" y="61" font-weight="bold" font-size="13">UI Layer</text>
+    <text x="115" y="79" font-size="10.5" fill="#555">diagram · search · Start/Stop</text>
+    <text x="385" y="61" font-weight="bold" font-size="13">Benchmark Runner</text>
+    <text x="385" y="79" font-size="10.5" fill="#555">2D / 3D / AI agent (sandboxed)</text>
+    <text x="385" y="236" font-weight="bold" font-size="13">Telemetry Poller</text>
+    <text x="385" y="254" font-size="10.5" fill="#555">10 Hz+ · read-only · thermal check</text>
+    <text x="115" y="236" font-weight="bold" font-size="13">Diagram Renderer</text>
+    <text x="115" y="254" font-size="10.5" fill="#555">60 FPS · Stat Readout</text>
+  </g>
+  <rect x="590" y="30" width="90" height="55" fill="var(--cpu)"/>
+  <rect x="590" y="100" width="90" height="55" fill="var(--gpu)"/>
+  <rect x="590" y="170" width="90" height="55" fill="var(--ram)"/>
+  <g text-anchor="middle" fill="#fff" font-weight="bold" font-size="12">
+    <text x="635" y="62">CPU</text><text x="635" y="132">GPU</text><text x="635" y="202">RAM</text>
+  </g>
+  <text x="635" y="268" text-anchor="middle" font-size="9.5" fill="#555">TARGET MACHINE</text>
+  <text x="635" y="281" text-anchor="middle" font-size="9" fill="#555">local PC or cloud (SSH)</text>
+
+  <g stroke="#333" stroke-width="1.3" fill="none" marker-end="url(#a2)">
+    <line x1="210" y1="52" x2="288" y2="52"/>
+    <line x1="290" y1="80" x2="212" y2="80"/>
+    <line x1="480" y1="65" x2="568" y2="65"/>
+    <line x1="568" y1="215" x2="482" y2="235"/>
+    <line x1="175" y1="100" x2="325" y2="203"/>
+    <line x1="290" y1="240" x2="212" y2="240"/>
+    <line x1="115" y1="205" x2="115" y2="102"/>
+  </g>
+  <g font-size="10.5" fill="#333">
+    <text x="249" y="46" text-anchor="middle">start / stop</text>
+    <text x="251" y="95" text-anchor="middle">done</text>
+    <text x="524" y="59" text-anchor="middle">execute</text>
+    <text x="528" y="243" text-anchor="middle">read sensors</text>
+    <text x="258" y="150">start(parts) / stop</text>
+    <text x="251" y="234" text-anchor="middle">metrics</text>
+    <text x="68" y="158">draw</text>
+  </g>
+</svg>
+<figcaption>Fig. 2 — Component architecture. Starting a test tells both the runner (what to run) and the poller (what to watch); the poller closes the loop back to the screen at 10 Hz+, and the runner reports when the test is done. On a cloud machine, the runner and poller run in the remote agent and talk to the UI over SSH.</figcaption>
+</figure>
+
+<h3 data-k="seq">3. Benchmark Sequence</h3>
+<figure>
+<svg viewBox="0 0 720 440" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+  </defs>
+  <g font-weight="bold" font-size="12.5" text-anchor="middle">
+    <text x="60" y="20">User</text><text x="200" y="20">UI</text><text x="340" y="20">Runner</text><text x="490" y="20">Hardware</text><text x="640" y="20">Poller</text>
+  </g>
+  <g stroke="#999" stroke-width="1">
+    <line x1="60" y1="30" x2="60" y2="430"/><line x1="200" y1="30" x2="200" y2="430"/><line x1="340" y1="30" x2="340" y2="430"/><line x1="490" y1="30" x2="490" y2="430"/><line x1="640" y1="30" x2="640" y2="430"/>
+  </g>
+  <g stroke="#333" stroke-width="1.2" marker-end="url(#a3)">
+    <line x1="60" y1="55" x2="198" y2="55"/>
+    <line x1="200" y1="85" x2="338" y2="85"/>
+    <line x1="200" y1="115" x2="638" y2="115"/>
+    <line x1="340" y1="145" x2="488" y2="145"/>
+    <line x1="640" y1="195" x2="492" y2="195"/>
+    <line x1="490" y1="220" x2="638" y2="220" stroke-dasharray="5 3"/>
+    <line x1="640" y1="245" x2="202" y2="245"/>
+    <line x1="200" y1="270" x2="62" y2="270"/>
+    <line x1="60" y1="324" x2="198" y2="324"/>
+    <line x1="200" y1="342" x2="338" y2="342"/>
+    <line x1="340" y1="360" x2="488" y2="360"/>
+    <line x1="340" y1="380" x2="202" y2="380" stroke-dasharray="5 3"/>
+    <line x1="200" y1="400" x2="638" y2="400"/>
+    <line x1="200" y1="420" x2="62" y2="420" stroke-dasharray="5 3"/>
+  </g>
+  <g font-size="10.5" fill="#222" text-anchor="middle">
+    <text x="130" y="49">select part, pick test, Start</text>
+    <text x="270" y="79">start(test, part)</text>
+    <text x="420" y="109">start(parts to watch)</text>
+    <text x="415" y="139">run real workload</text>
+    <text x="565" y="189">read sensors</text>
+    <text x="565" y="214">raw readings</text>
+    <text x="420" y="239">clean values</text>
+    <text x="130" y="264">screen updates</text>
+    <text x="130" y="319">Stop</text>
+    <text x="270" y="337">stop()</text>
+    <text x="415" y="354">end workload</text>
+    <text x="270" y="374">done</text>
+    <text x="420" y="394">stop()</text>
+    <text x="130" y="414">result summary</text>
+  </g>
+  <rect x="40" y="165" width="665" height="118" fill="none" stroke="#333" stroke-dasharray="5 3"/>
+  <rect x="40" y="165" width="150" height="16" fill="#fff" stroke="#333"/>
+  <text x="47" y="177" font-size="10" font-weight="bold">loop · every ≤100 ms</text>
+  <rect x="40" y="290" width="665" height="140" fill="none" stroke="#333" stroke-dasharray="5 3"/>
+  <rect x="40" y="290" width="232" height="16" fill="#fff" stroke="#333"/>
+  <text x="47" y="302" font-size="10" font-weight="bold">end · Stop, completion, or thermal limit</text>
+</svg>
+<figcaption>Fig. 3 — Benchmark sequence. The poller keeps reading sensors for the whole test so the screen matches the real hardware; when the test ends for any reason, the workload is ended, polling stops, and a summary is shown. (On completion or a thermal abort, the runner or poller starts the end block instead of the user.)</figcaption>
+</figure>
+
+<h3 data-k="matrix">4. Workload / Component Matrix</h3>
+<p>Each workload is offered only for the components it meaningfully exercises. "Observed" components animate because the workload depends on them, but they are not the target.</p>
+<table class="std">
+  <tr><th style="width:22%">Workload</th><th style="width:26%">CPU</th><th style="width:26%">GPU</th><th>RAM</th></tr>
+  <tr><td>2D workload</td><td>Target (CPU-rendered 2D drawing / image processing)</td><td>Observed</td><td>Observed</td></tr>
+  <tr><td>3D workload</td><td>Observed (draw-call submission)</td><td>Target</td><td>Observed (texture/buffer uploads)</td></tr>
+  <tr><td>Memory workload (2D test with RAM selected)</td><td>Observed</td><td>—</td><td>Target (large buffer copy, measures bandwidth)</td></tr>
+  <tr><td>AI Benchmark Mode</td><td>Any the agent uses</td><td>Any the agent uses</td><td>Any the agent uses</td></tr>
+</table>
+
+<h3 data-k="sel">5. Component Selection</h3>
+
+<div class="uc">
+  <h4><span class="id">UC-1</span>Detect Hardware at Startup <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>Application launches, or the user changes the target machine (UC-2)</td></tr>
+    <tr><td>Precondition</td><td>None</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>The application queries the target machine's OS and vendor libraries for its CPU, GPU(s), and RAM — directly on the local PC, or through the remote agent on a cloud machine.</li>
+      <li>Detected device names populate each part's search options.</li>
+      <li>The diagram renders each detected part as selectable.</li>
+      <li>Any part that cannot be detected is shown greyed out as "not detected".</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>No GPU is detected: the GPU part is greyed out as "not detected" and the 3D workload is disabled.</li><li>NVML is missing: the GPU name is taken from the operating system and its GPU metrics show "unavailable".</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>Every detected part is shown as selectable and its search box lists the real device name.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-1:</b> The application shall list only hardware actually detected on the machine. If more than one GPU is present, each shall be selectable separately.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-2</span>Connect to a Remote Machine <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>User chooses "Remote machine" as the target and enters the host address, username, and SSH key file</td></tr>
+    <tr><td>Precondition</td><td>The user has rented and started a cloud machine that accepts SSH key login</td></tr>
+    <tr><td>Basic Path</td><td><ol><li>User selects "Remote machine" and enters the host, username, and key file.</li><li>The application connects over SSH using the key.</li><li>The application checks that Python and the NVIDIA driver are present, copies the remote agent into a working folder, and starts it.</li><li>The remote agent reports the machine's hardware (UC-1).</li><li>The diagram shows the remote hardware, and the status line reads "Connected: HOST".</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>Login fails: an error explains why, and the target stays on the local PC.</li><li>Python or the NVIDIA driver is missing: an error lists what is missing, and the target stays on the local PC.</li><li>The connection drops during a test: all remote metrics show "unavailable" (UC-12), and the remote agent stops the workload on its own after 10 seconds without contact.</li><li>The user switches back to the local PC: any remote test is stopped (UC-8), and the remote agent is stopped and removed.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The diagram shows the remote machine's hardware, and tests run on that machine.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-20:</b> Remote connections shall use SSH with key authentication only; the application shall never store passwords or cloud-account credentials. <b>FR-21:</b> The application shall never create, start, stop, or resize cloud machines; the user manages them, and their cost, through the provider. <b>FR-22:</b> The remote agent shall stop any running workload if it loses contact with the application for 10 seconds. <b>FR-23:</b> The remote agent shall be read-only toward hardware settings, exactly as on the local PC, and shall be removed from the machine when the user disconnects.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-3</span>Select a Component <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>User clicks a part in the diagram, or types into a part's search box</td></tr>
+    <tr><td>Precondition</td><td>UC-1 has completed and at least one part is selectable</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>User clicks a part in the diagram, <b>or</b> types into / clicks that part's search box and clicks a matching result.</li>
+      <li>The diagram highlights the selected part and the status text updates.</li>
+      <li>Any previously selected part is cleared.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>The search text matches nothing: the list shows "No matches" and the current selection is unchanged.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>Exactly one part is selected, highlighted, and named in the status line.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-2:</b> Only one component may be selected at a time in the MVP. <b>FR-3:</b> The highlight shall update within one UI frame (≤17 ms) of the click.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-4</span>Deselect / Reselect a Component <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>User selects a different component while one is already selected</td></tr>
+    <tr><td>Precondition</td><td>A component is currently selected</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>User selects a new component.</li>
+      <li>If a test is running, it is stopped (UC-8).</li>
+      <li>The previous component's highlight and search box are cleared.</li>
+      <li>The new component is highlighted.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>The user reselects the part that is already selected: nothing changes and any running test continues.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>Only the new part is selected and no test is running.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-4:</b> Any running test shall be stopped before the selection changes, so no test is left running against an unselected part.</td></tr>
+  </table>
+</div>
+
+<h3 data-k="exec">6. Benchmark Execution</h3>
+
+<div class="uc">
+  <h4><span class="id">UC-5</span>Run a 2D Workload Benchmark <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>User selects the 2D workload and presses Start</td></tr>
+    <tr><td>Precondition</td><td>A component is selected and the 2D workload is valid for it (III.4)</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>User selects the 2D workload.</li>
+      <li>User presses Start.</li>
+      <li>The application launches the real 2D workload on that hardware.</li>
+      <li>Telemetry polling starts for the target and observed components.</li>
+      <li>The diagram animates and the readout updates in real time.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>The workload fails to launch: continue at UC-13.</li><li>A telemetry read fails during the test: continue at UC-12.</li><li>The user presses Stop: continue at UC-8.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The 2D workload is running and live telemetry is shown for the target and observed parts.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-5:</b> The workload shall actually execute on the hardware; no simulated or pre-recorded data shall be shown.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-6</span>Run a 3D Workload Benchmark <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>User selects the 3D workload and presses Start</td></tr>
+    <tr><td>Precondition</td><td>The GPU is selected and supports OpenGL 3.3 or later</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>User selects the 3D workload.</li>
+      <li>User presses Start.</li>
+      <li>The application launches a real 3D rendering workload.</li>
+      <li>Telemetry polling starts for the GPU, plus CPU and RAM as observed parts.</li>
+      <li>The GPU (and observed parts) animate; the readout shows frame time, utilization, temperature, and power draw.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>The GPU does not support OpenGL 3.3: continue at UC-13.</li><li>A component reaches its thermal limit: continue at UC-14.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The 3D workload is running and frame time is shown in the readout.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-6:</b> Frame time shall be shown in the readout for this test, measured by the workload's render loop.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-7</span>Run an AI Benchmark Mode Task <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>User selects AI Benchmark Mode and presses Start</td></tr>
+    <tr><td>Precondition</td><td>A component is selected, and Ollama is running with the Llama 3.2 3B model installed</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>User selects AI Benchmark Mode and picks a task goal (e.g., "train a tiny image classifier", "render a scene").</li>
+      <li>User presses Start.</li>
+      <li>The application launches the local AI agent inside a sandbox.</li>
+      <li>The agent plans and carries out the task using only its allowed tools.</li>
+      <li>Telemetry polling starts for every component the agent's work touches.</li>
+      <li>The diagram and readout show real, unscripted hardware behavior until the task ends, times out, or the user stops it.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>Ollama is not running or the model is not installed: an error explains how to start Ollama or install the model, and the app returns to the selection state (UC-13).</li><li>The task reaches its time limit: the agent is stopped (UC-8) and the summary is marked "time limit reached".</li><li>The agent attempts a blocked action (network access, a file outside its folder): the action is refused and logged, and the task continues.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The agent is running inside its sandbox and live telemetry is shown for every part it uses.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-7:</b> The agent's actions shall not be predetermined; hardware behavior is observed, not scripted. <b>FR-8:</b> The agent shall run entirely on the local machine: its model is served by Ollama on localhost, and no request leaves the machine. <b>FR-9:</b> Code the agent runs shall be sandboxed: no administrator rights, no network, file access limited to a dedicated working folder, only approved tools (e.g., run Python in that folder), and a time limit (default 10 minutes).</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-8</span>Stop a Running Test <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>User presses Stop, selects another component, or closes the app</td></tr>
+    <tr><td>Precondition</td><td>A test or AI task is running</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>The application signals the runner to end the workload.</li>
+      <li>The workload process ends.</li>
+      <li>Telemetry polling stops and the diagram returns to idle.</li>
+      <li>A partial summary is shown, marked "stopped by user".</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>The workload does not release the hardware within 2 seconds: its process is force-terminated and the summary notes "force-stopped".</li><li>The user closes the app: the test is stopped without a summary and the app exits.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>No workload process is running, the diagram is idle, and a partial summary is shown.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-10:</b> A stopped workload shall release the CPU/GPU within 2 seconds; if it does not, its process shall be force-terminated.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-9</span>Test Completes <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>The workload or AI task finishes on its own</td></tr>
+    <tr><td>Precondition</td><td>A test or AI task was running</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>The runner reports completion.</li>
+      <li>Telemetry polling stops.</li>
+      <li>The diagram returns to idle.</li>
+      <li>A summary shows duration and the minimum, average, and peak of each metric recorded.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>A metric had no valid samples during the run (e.g., it was unavailable the whole time): the summary shows "no data" for that metric.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The diagram is idle and the summary of the completed run is shown.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-11:</b> The summary shall be computed only from samples actually recorded during the run.</td></tr>
+  </table>
+</div>
+
+<h3 data-k="tele">7. Telemetry &amp; Visualization</h3>
+
+<div class="uc">
+  <h4><span class="id">UC-10</span>Live Diagram Animation from Telemetry <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>A test or AI task is running</td></tr>
+    <tr><td>Precondition</td><td>Telemetry polling is active for the component(s) involved</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>Telemetry is polled at 10 Hz or greater.</li>
+      <li>The diagram updates brightness/motion for the target part based on real utilization.</li>
+      <li>Observed parts (e.g., RAM feeding the GPU) animate too.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>Telemetry for one part fails: that part follows UC-12 while the others keep animating.</li><li>Rendering falls behind: the renderer skips frames rather than delaying telemetry, so latency stays under 200 ms.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The diagram reflects the latest telemetry sample within 200 ms.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-12:</b> Animation shall run at 60 FPS. <b>FR-13:</b> Latency from a hardware sample to its visual reflection shall be under 200 ms. <b>FR-14:</b> Between samples, the animation may interpolate toward the latest sample but shall never display a value outside the range of real samples.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-11</span>Live Stat Readout <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>A test or AI task is running</td></tr>
+    <tr><td>Precondition</td><td>Telemetry polling is active</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>The application reads the current telemetry values.</li>
+      <li>The readout shows utilization, memory bandwidth, and temperature at minimum, plus frame time (3D), and power draw / FLOPS when available.</li>
+      <li>Values refresh on every poll for the duration of the test.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>A metric is not supported on this hardware or needs administrator rights: it shows "unavailable" with the reason.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The readout shows the latest sample for each available metric.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-15:</b> Numbers in the readout shall be the latest raw sample — not cached, averaged, or smoothed. (Smoothing is allowed only in the animation, per FR-14.) <b>FR-16:</b> Every metric shall show its unit and its source (sensor or workload-measured).</td></tr>
+  </table>
+</div>
+
+<h3 data-k="err">8. Error Handling &amp; Safety</h3>
+
+<div class="uc">
+  <h4><span class="id">UC-12</span>Telemetry Polling Failure <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>A telemetry source becomes unreadable (sensor failure, permissions issue, unsupported hardware)</td></tr>
+    <tr><td>Precondition</td><td>A test is running or about to run</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>The application tries to read telemetry for the active component.</li>
+      <li>The read fails or takes longer than 100 ms.</li>
+      <li>The application shows a message naming the component and metric that are unavailable.</li>
+      <li>That part stops animating; its affected numbers show "unavailable".</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>The sensor recovers: the part resumes animating and the message clears.</li><li>All telemetry for the target part fails: the test is stopped (UC-8), since it can no longer be shown truthfully.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The app is still running; failed metrics show "unavailable" and all other parts keep updating.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-17:</b> A telemetry failure shall not crash the application or affect components still reading correctly.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-13</span>Benchmark Fails to Start <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>User starts a workload the selected hardware cannot run, or the workload fails to launch</td></tr>
+    <tr><td>Precondition</td><td>A component and workload are selected</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>User presses Start.</li>
+      <li>The application detects the combination is unsupported (III.4) or the workload fails to launch.</li>
+      <li>The application shows an error explaining why and returns to the selection state.</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>The user picks a supported workload and presses Start again: continue at UC-5, UC-6, or UC-7.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The app is in the selection state and no workload is running.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-18:</b> No partial or fake telemetry or animation shall be shown after a failed start.</td></tr>
+  </table>
+</div>
+
+<div class="uc">
+  <h4><span class="id">UC-14</span>Thermal Safety Abort <em>(Essential)</em></h4>
+  <table>
+    <tr><td>Trigger</td><td>A component's temperature reaches its safety limit during a test</td></tr>
+    <tr><td>Precondition</td><td>A test or AI task is running and temperature telemetry is available</td></tr>
+    <tr><td>Basic Path</td><td><ol>
+      <li>The poller reads a temperature at or above the limit.</li>
+      <li>The application stops the test (UC-8).</li>
+      <li>A warning names the component and the temperature reached.</li>
+      <li>The summary is marked "aborted — thermal limit".</li></ol></td></tr>
+    <tr><td>Alternate Path</td><td><ol type="a"><li>Temperature telemetry is unavailable at start: the user is warned before the test starts and may continue or cancel.</li></ol></td></tr>
+    <tr><td>Postcondition</td><td>The test is stopped and a warning names the component and temperature.</td></tr>
+    <tr class="req"><td>Requirement</td><td><b>FR-19:</b> Default limits: CPU 95 °C, GPU 90 °C (or the vendor-reported slowdown temperature if lower). The test shall be stopped within 1 second of the limit being read. If temperature is unavailable, the user shall be warned before the test starts.</td></tr>
+  </table>
+</div>
+
+<h3 data-k="ext">9. External Interface Requirements</h3>
+<table class="std">
+  <tr><th style="width:22%">Interface</th><th>Requirement</th></tr>
+  <tr><td>User interface</td><td>A single window with the hardware diagram on top, a search box under each part, a workload selector, Start/Stop buttons, a live stat panel, and a status line. Dark theme using the colors in III.10.</td></tr>
+  <tr><td>Hardware interfaces</td><td>Read-only access to CPU, GPU, and RAM counters through the OS and vendor libraries (on a cloud machine, through the remote agent). No writes to any hardware register or setting.</td></tr>
+  <tr><td>Software interfaces</td><td><code>psutil</code> (CPU/RAM), NVML via <code>pynvml</code> (NVIDIA GPU), LibreHardwareMonitor (optional, CPU temperature/power), OpenGL 3.3 / EGL (3D workload), Paramiko (SSH to cloud machines), and Ollama's local API on localhost (AI agent).</td></tr>
+  <tr><td>Communication interfaces</td><td>Local mode: no external network connections; the only connection is to the local Ollama service on 127.0.0.1. Remote mode: one SSH connection (TCP port 22, key authentication) to the user's cloud machine, carrying commands and telemetry.</td></tr>
+</table>
+
+<div class="keep">
+<h3 data-k="wire">10. Interface Wireframe</h3>
+<p>The picker screen: a diagram of three clickable parts on top, a search box under each, and a status line naming the selected part.</p>
+<figure class="dark">
+<svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+  <text x="360" y="32" text-anchor="middle" fill="#e2e8f0" font-size="15" font-weight="bold">Diagram</text>
+  <rect x="45" y="55" width="170" height="100" rx="12" fill="#3b82f6"/>
+  <rect x="275" y="55" width="170" height="100" rx="12" fill="#22c55e" stroke="#f8fafc" stroke-width="4"/>
+  <rect x="505" y="55" width="170" height="100" rx="12" fill="#eab308"/>
+  <g text-anchor="middle" fill="#fff" font-weight="bold" font-size="14">
+    <text x="130" y="110">CPU</text><text x="360" y="110">GPU</text><text x="590" y="110">RAM</text>
+  </g>
+  <g text-anchor="middle" fill="#e2e8f0" font-weight="bold" font-size="22">
+    <text x="245" y="112">+</text><text x="475" y="112">+</text>
+  </g>
+  <g fill="#1e293b" stroke-width="2">
+    <rect x="210" y="185" width="300" height="32" rx="4" stroke="#3b82f6"/>
+    <rect x="210" y="230" width="300" height="32" rx="4" stroke="#22c55e"/>
+    <rect x="210" y="275" width="300" height="32" rx="4" stroke="#eab308"/>
+  </g>
+  <g fill="#64748b" font-size="11.5">
+    <text x="224" y="205">Search CPU...</text>
+    <text x="224" y="250" fill="#f8fafc">GPU</text>
+    <text x="224" y="295">Search RAM...</text>
+  </g>
+  <text x="360" y="336" text-anchor="middle" fill="#e2e8f0" font-size="13">Selected: GPU</text>
+</svg>
+<figcaption>Fig. 4 — Picker screen wireframe, shown with the GPU selected (white outline, filled search box, status line).</figcaption>
+</figure>
+</div>
+<p>CPU = <code>#3b82f6</code> · GPU = <code>#22c55e</code> · RAM = <code>#eab308</code> · background = <code>#0f172a</code>. The workload selector, Start/Stop buttons, and stat panel (III.9) sit below the search boxes.</p>
+
+<!-- ================= IV. NFR ================= -->
+<h2 class="part" data-k="p4">IV. Non-Functional Requirements</h2>
+<table class="std">
+  <tr><th style="width:9%">ID</th><th style="width:14%">Quality</th><th style="width:40%">Requirement</th><th>Verification</th></tr>
+  <tr><td>NFR-1</td><td>Performance</td><td>Telemetry shall be polled at 10 Hz or greater with under 200 ms latency (under 500 ms on a cloud machine).</td><td>Log sample and draw timestamps during a 60 s run; poll interval ≤100 ms and latency &lt;200 ms for 95% of samples.</td></tr>
+  <tr><td>NFR-2</td><td>Performance</td><td>The diagram shall render at 60 FPS (≤17 ms per frame) during an active test.</td><td>Log frame times during each workload; average ≥58 FPS, no frame &gt;50 ms.</td></tr>
+  <tr><td>NFR-3</td><td>Reliability</td><td>Displayed values shall be real and current for the full test — no stale data older than 200 ms.</td><td>Compare readout values to logged raw samples.</td></tr>
+  <tr><td>NFR-4</td><td>Robustness</td><td>Telemetry failures and unsupported combinations shall produce a clear error, never a crash or fake data.</td><td>Deny a sensor source and run an unsupported combination; app keeps running.</td></tr>
+  <tr><td>NFR-5</td><td>Maintainability</td><td>New components (motherboard/chipset, storage) and workload types (AI/ML) shall be addable as new modules without changing the diagram or selection code.</td><td>Code review; add a stub component in a test.</td></tr>
+  <tr><td>NFR-6</td><td>Security</td><td>Telemetry access shall be read-only. The app shall never change driver settings, clocks, fan curves, or power states, and shall run as a standard user (administrator only for optional sensors).</td><td>Code review; run as standard user.</td></tr>
+  <tr><td>NFR-7</td><td>Security</td><td>Code run by the AI agent shall have no network access, no administrator rights, and file access limited to its working folder.</td><td>Attempt a network call and an out-of-folder write from the agent; both are blocked.</td></tr>
+  <tr><td>NFR-8</td><td>Safety</td><td>Any test shall stop within 1 s of a component reaching its thermal limit.</td><td>Lower the limit in a debug setting and confirm the abort.</td></tr>
+  <tr><td>NFR-9</td><td>Usability</td><td>From launch, a user shall be able to start a test in no more than 3 interactions: select a part, select a workload, press Start.</td><td>Walkthrough with a new user.</td></tr>
+  <tr><td>NFR-10</td><td>Security</td><td>Remote connections shall use SSH key authentication only, and no passwords or cloud-account credentials shall be stored.</td><td>Code review; inspect saved settings files.</td></tr>
+  <tr><td>NFR-11</td><td>Reliability</td><td>If the connection to a cloud machine is lost, the remote workload shall stop within 10 seconds so it does not keep running (and billing) unattended.</td><td>Disconnect the network mid-test; confirm the remote process ends.</td></tr>
+</table>
+
+<!-- ================= V. TRACEABILITY ================= -->
+<h2 class="part" data-k="p5">V. Requirements Traceability</h2>
+<table class="std">
+  <tr><th style="width:20%">Requirement</th><th style="width:18%">Use Case</th><th>Verification</th></tr>
+  <tr><td>FR-1</td><td>UC-1</td><td>Run on machines with one and two GPUs; compare to Device Manager.</td></tr>
+  <tr><td>FR-2, FR-3</td><td>UC-3</td><td>Manual UI test; frame-time log.</td></tr>
+  <tr><td>FR-4</td><td>UC-4</td><td>Switch parts mid-test; confirm the workload process ends.</td></tr>
+  <tr><td>FR-5</td><td>UC-5</td><td>Confirm utilization rises in Task Manager during the test.</td></tr>
+  <tr><td>FR-6</td><td>UC-6</td><td>Readout shows frame time; matches the workload log.</td></tr>
+  <tr><td>FR-7, FR-8, FR-9</td><td>UC-7</td><td>Run with network disabled; sandbox tests (NFR-7).</td></tr>
+  <tr><td>FR-10</td><td>UC-8</td><td>Press Stop; CPU/GPU utilization drops within 2 s.</td></tr>
+  <tr><td>FR-11</td><td>UC-9</td><td>Summary values match the recorded sample log.</td></tr>
+  <tr><td>FR-12, FR-13, FR-14</td><td>UC-10</td><td>NFR-1 and NFR-2 measurements.</td></tr>
+  <tr><td>FR-15, FR-16</td><td>UC-11</td><td>Readout values match the raw sample log.</td></tr>
+  <tr><td>FR-17</td><td>UC-12</td><td>Simulate a sensor failure; other parts keep updating.</td></tr>
+  <tr><td>FR-18</td><td>UC-13</td><td>Start an unsupported combination; no animation shown.</td></tr>
+  <tr><td>FR-19</td><td>UC-14</td><td>NFR-8 test.</td></tr>
+  <tr><td>FR-20 – FR-23</td><td>UC-2</td><td>Connect to a cloud machine with a key; check no credentials are saved; drop the connection mid-test (NFR-11); disconnect and confirm the agent is removed.</td></tr>
+</table>
+
+<!-- ================= VI. APPENDIX ================= -->
+<h2 class="part">VI. Appendix — Roadmap</h2>
+<h3 data-k="p6">1. MVP Scope — Committed to Build</h3>
+<ul>
+  <li>Hardware detection and a diagram of CPU + GPU + RAM as clickable parts</li>
+  <li>Real telemetry for those 3 parts (10 Hz+, under 200 ms latency)</li>
+  <li>Two real workloads: one 2D, one 3D (never simulated), runnable on the local PC or on a rented cloud machine over SSH</li>
+  <li>Diagram animates the active part(s) at 60 FPS from real utilization</li>
+  <li>Live readout per test: utilization, memory bandwidth, temperature (plus frame time for 3D)</li>
+  <li>Stop button, end-of-test summary, and thermal safety abort</li>
+  <li>AI Benchmark Mode: a local, sandboxed AI agent runs an open-ended task while hardware behavior is observed</li>
+</ul>
+<h3 data-k="stretch">2. Stretch Goals — If Time Allows</h3>
+<ul>
+  <li>Add motherboard/chipset and storage as visualized parts</li>
+  <li>Add a fixed AI/ML workload as a third test type</li>
+  <li>Full AMD and Intel GPU telemetry support</li>
+  <li>Record and replay a test run</li>
+  <li>Compare two runs — or two machines — side by side</li>
+</ul>
+<h3 data-k="ult">3. Ultimate Goal — Beyond Stretch</h3>
+<p>Run the same piece of software across different hardware — different CPUs, GPUs, machines — and use the visualizer to see how well the code actually uses each one. Where one machine's GPU sits idle while the CPU maxes out, where a routine is serial when the hardware could run it in parallel, where the code itself becomes the bottleneck instead of the hardware — surface those spots directly, instead of just showing a utilization percentage. The goal is finding where code should change to make better use of whatever hardware it's running on, backed by real telemetry from real runs, not static analysis alone.</p>
+
+</body>
+</html>

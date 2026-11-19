@@ -1,0 +1,5 @@
+psutil
+nvidia-ml-py
+moderngl
+# optional - ML test and the AI benchmark's GPU tasks (install the CUDA build from pytorch.org):
+# torch
