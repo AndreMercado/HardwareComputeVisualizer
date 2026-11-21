@@ -124,17 +124,36 @@ like
 
     ◀ #1 · 75% of the run time · 4.9 s · 1 line · 1 of 20 cores busy - single-threaded
 
-The boxes fill in live while the program runs and stay until the next run. Optionally, blue dashed
+The boxes fill in live while the program runs and stay until the next run. Every other line that took time gets a
+faint `share · time`, each function a lens with its total, line 1 the run summary, and lines where a
+bottleneck held (serial code, GPU waiting, disk, PCIe, RAM, waiting - the same finder as above, run on
+the profiler's own hardware samples) an orange `⚠`. **HCV: Open the run report** lists it all with
+links into the code. The **eye** button beside ▶ (or right-click in the code) picks what to show: speed,
+memory (ranked highlights of the lines holding the most), function totals, bottlenecks, hardware -
+and **Where in the code?** jumps to the slowest lines or the biggest memory in any file. A run started from the visualizer also gets the visualizer's sensors (CPU
+temperature and power...) per line. Optionally, blue dashed
 boxes mark the lines whose objects held the most memory. Install it with
 
     powershell -ExecutionPolicy Bypass -File vscode-extension/install.ps1
 
-then reload VS Code, open a `.py` file and press the flame button in the editor title (or
-right-click > HCV: ...). "Profile in the Hardware Visualizer" runs it as YOUR CODE in this app
+(it builds `vscode-extension/dist/hcv-hotspots-0.2.0.vsix` - a normal extension file with the profiler
+inside; on another PC just use Extensions > `···` > Install from VSIX…) then reload VS Code, open a `.py` file and press the **yellow ▶** button in the editor title (a
+normal run in a terminal plus the memory test: every colour drawn), the flame button (profile
+only, output in the HCV panel) or right-click > HCV: .... "Profile in the Hardware Visualizer" runs it as YOUR CODE in this app
 (AI CONTROL on), so you watch the hardware while the boxes fill in. Try it on
 `examples/hotspots.py`. For exact line times also `pip install py-spy` (otherwise the numbers are
 approximate and marked `≈`). Details: `vscode-extension/README.md`. Without VS Code:
 `python profiler.py your_script.py` writes `.hcv/profile.json` next to the script.
+
+### VS Code link (automatic)
+
+While the app is open it publishes a local link for the VS Code extension (HCV Hot Spots):
+`%LOCALAPPDATA%\HCV\app.json` holds a port on 127.0.0.1 and a token. The extension connects by itself -
+no button, no settings - and can run your file here as YOUR CODE ("Watch in the Hardware Visualizer"),
+and the summary of such a run lists your slowest lines as links that open in VS Code. The link can only
+run a program, start, stop and read the state (`EDITOR_ACTIONS` in `control.py`); it is not AI CONTROL.
+The extension also carries a copy of this app and starts it when it isn't open, so people who only
+install the extension get both.
 
 ### AI control: let an AI drive the app while you watch
 
