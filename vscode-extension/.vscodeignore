@@ -1,0 +1,7 @@
+build.ps1
+install.ps1
+dist/**
+*.vsix
+hcv-path.txt
+**/__pycache__/**
+.gitignore

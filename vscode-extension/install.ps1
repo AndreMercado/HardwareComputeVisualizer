@@ -1,11 +1,11 @@
-# Installs the HCV Hot Spots extension into VS Code (copies this folder into
-# ~/.vscode/extensions and remembers where profiler.py lives). Reload VS Code afterwards.
+# Builds the extension (.vsix) and installs it into VS Code. Reload VS Code afterwards.
 #   powershell -ExecutionPolicy Bypass -File vscode-extension/install.ps1
+$ErrorActionPreference = "Stop"
 $src = $PSScriptRoot
-$hcv = Split-Path $src -Parent
-$dest = Join-Path $env:USERPROFILE ".vscode\extensions\hcv.hcv-hotspots-0.1.0"
-if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
-New-Item -ItemType Directory $dest | Out-Null
-Copy-Item (Join-Path $src "package.json"), (Join-Path $src "extension.js"), (Join-Path $src "README.md") $dest
-Set-Content (Join-Path $dest "hcv-path.txt") $hcv -NoNewline -Encoding UTF8
-Write-Host "Installed to $dest (profiler: $hcv\profiler.py). Reload VS Code: Ctrl+Shift+P > Developer: Reload Window."
+& (Join-Path $src "build.ps1")
+$version = (Get-Content (Join-Path $src "package.json") -Raw | ConvertFrom-Json).version
+# the old copy-folder install (0.1.0) would sit next to the packaged one
+$old = Join-Path $env:USERPROFILE ".vscode\extensions\hcv.hcv-hotspots-0.1.0"
+if (Test-Path $old) { Remove-Item $old -Recurse -Force }
+code --install-extension (Join-Path $src "dist\hcv-hotspots-$version.vsix") --force
+Write-Host "Installed. Reload VS Code: Ctrl+Shift+P > Developer: Reload Window."

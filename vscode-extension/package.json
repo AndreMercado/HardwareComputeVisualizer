@@ -1,8 +1,8 @@
 {
   "name": "hcv-hotspots",
   "displayName": "HCV Hot Spots",
-  "description": "Runs your Python file under the Hardware Compute Visualizer's profiler and draws boxes around the code that takes the most time (and memory), live while it runs, with what the hardware was doing there.",
-  "version": "0.1.0",
+  "description": "Run your Python file and see in the code where the time and memory go: boxes around the slowest code, memory highlights, bottlenecks (serial code, waiting, GPU starved) and what the hardware was doing on each line.",
+  "version": "0.2.0",
   "publisher": "hcv",
   "license": "MIT",
   "engines": {
@@ -10,15 +10,32 @@
   },
   "categories": [
     "Visualization",
+    "Debuggers",
     "Other"
   ],
   "main": "./extension.js",
   "activationEvents": [
     "onLanguage:python",
-    "workspaceContains:**/.hcv/profile.json"
+    "workspaceContains:**/.hcv/profile.json",
+    "onCommand:hcv.runAll"
   ],
   "contributes": {
     "commands": [
+      {
+        "command": "hcv.runAll",
+        "title": "Run + color everything (time, memory, crash)",
+        "icon": {
+          "light": "media/run-yellow.svg",
+          "dark": "media/run-yellow.svg"
+        },
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.report",
+        "title": "Open the run report (bottlenecks, hardware, every hot line)",
+        "icon": "$(graph)",
+        "category": "HCV"
+      },
       {
         "command": "hcv.profile",
         "title": "HCV: Profile this file (box the slow code)",
@@ -30,7 +47,8 @@
       },
       {
         "command": "hcv.profileInVisualizer",
-        "title": "HCV: Profile in the Hardware Visualizer (watch the hardware)"
+        "title": "Run in the Hardware Visualizer (watch the hardware live)",
+        "category": "HCV"
       },
       {
         "command": "hcv.hotspots",
@@ -43,17 +61,133 @@
       {
         "command": "hcv.clear",
         "title": "HCV: Clear the boxes"
+      },
+      {
+        "command": "hcv.chooseView",
+        "title": "Choose what to show…",
+        "icon": "$(eye)",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.where",
+        "title": "Where in the code? (slowest lines + biggest memory, all files)",
+        "icon": "$(location)",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.toggle.speed",
+        "title": "Speed - boxes around the slowest code",
+        "toggled": "hcv.show.speed",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.toggle.lines",
+        "title": "Speed of every other line",
+        "toggled": "hcv.show.lines",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.toggle.memory",
+        "title": "Memory - where it is held",
+        "toggled": "hcv.show.memory",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.toggle.functions",
+        "title": "Totals above each function",
+        "toggled": "hcv.show.functions",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.toggle.bottlenecks",
+        "title": "Bottlenecks (⚠)",
+        "toggled": "hcv.show.bottlenecks",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.toggle.hardware",
+        "title": "Hardware in the labels",
+        "toggled": "hcv.show.hardware",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.toggle.crash",
+        "title": "Crash line",
+        "toggled": "hcv.show.crash",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.preset.everything",
+        "title": "Show everything",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.preset.speed",
+        "title": "Show speed only",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.preset.memory",
+        "title": "Show memory only",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.preset.speedMemory",
+        "title": "Show speed + memory",
+        "category": "HCV"
+      },
+      {
+        "command": "hcv.installTools",
+        "category": "HCV",
+        "title": "Install the optional Python tools (psutil, py-spy, nvidia-ml-py, moderngl)"
+      },
+      {
+        "command": "hcv.openVisualizer",
+        "category": "HCV",
+        "title": "Open the Hardware Visualizer (desktop app)",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "hcv.toggle.viaApp",
+        "category": "HCV",
+        "title": "Watch in the Hardware Visualizer (yellow ▶ runs through the app)",
+        "toggled": "hcv.viaApp"
       }
     ],
     "menus": {
       "editor/title": [
         {
+          "command": "hcv.runAll",
+          "when": "editorLangId == python",
+          "group": "navigation@0"
+        },
+        {
+          "submenu": "hcv.viewMenu",
+          "when": "editorLangId == python",
+          "group": "navigation@1"
+        },
+        {
           "command": "hcv.profile",
           "when": "editorLangId == python",
-          "group": "navigation"
+          "group": "navigation@2"
         }
       ],
       "editor/context": [
+        {
+          "submenu": "hcv.viewMenu",
+          "when": "editorLangId == python",
+          "group": "hcv@0"
+        },
+        {
+          "command": "hcv.runAll",
+          "when": "editorLangId == python",
+          "group": "hcv@0"
+        },
+        {
+          "command": "hcv.report",
+          "when": "editorLangId == python",
+          "group": "hcv@0"
+        },
         {
           "command": "hcv.profile",
           "when": "editorLangId == python",
@@ -69,6 +203,76 @@
           "when": "editorLangId == python",
           "group": "hcv@3"
         }
+      ],
+      "hcv.viewMenu": [
+        {
+          "command": "hcv.toggle.speed",
+          "group": "1_layers@0"
+        },
+        {
+          "command": "hcv.toggle.lines",
+          "group": "1_layers@1"
+        },
+        {
+          "command": "hcv.toggle.memory",
+          "group": "1_layers@2"
+        },
+        {
+          "command": "hcv.toggle.functions",
+          "group": "1_layers@3"
+        },
+        {
+          "command": "hcv.toggle.bottlenecks",
+          "group": "1_layers@4"
+        },
+        {
+          "command": "hcv.toggle.hardware",
+          "group": "1_layers@5"
+        },
+        {
+          "command": "hcv.toggle.crash",
+          "group": "1_layers@6"
+        },
+        {
+          "command": "hcv.preset.everything",
+          "group": "2_presets@0"
+        },
+        {
+          "command": "hcv.preset.speed",
+          "group": "2_presets@1"
+        },
+        {
+          "command": "hcv.preset.memory",
+          "group": "2_presets@2"
+        },
+        {
+          "command": "hcv.preset.speedMemory",
+          "group": "2_presets@3"
+        },
+        {
+          "command": "hcv.chooseView",
+          "group": "3_more@0"
+        },
+        {
+          "command": "hcv.where",
+          "group": "3_more@1"
+        },
+        {
+          "command": "hcv.report",
+          "group": "3_more@2"
+        },
+        {
+          "command": "hcv.runAll",
+          "group": "4_run@0"
+        },
+        {
+          "command": "hcv.toggle.viaApp",
+          "group": "0_app@0"
+        },
+        {
+          "command": "hcv.openVisualizer",
+          "group": "0_app@1"
+        }
       ]
     },
     "configuration": {
@@ -82,7 +286,7 @@
         "hcv.visualizerFolder": {
           "type": "string",
           "default": "",
-          "description": "Folder of the Hardware Compute Visualizer (profiler.py). Empty: the folder set when the extension was installed."
+          "description": "Your own copy of the Hardware Compute Visualizer (the folder with main.py) to start instead of the one that ships with the extension. Leave empty normally."
         },
         "hcv.maxBoxes": {
           "type": "number",
@@ -93,9 +297,41 @@
           "type": "number",
           "default": 0.02,
           "description": "Smallest share of the run time a block needs to get a box (0.02 = 2%)."
+        },
+        "hcv.showAllLines": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also mark every other line that took time (faint 'share · time'; orange with ⚠ where a bottleneck held)."
+        },
+        "hcv.lineMinShare": {
+          "type": "number",
+          "default": 0.005,
+          "description": "Smallest share of the run time a line needs to get a faint mark (0.005 = 0.5%)."
+        },
+        "hcv.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the run summary on line 1 and each function's total time above its def."
+        },
+        "hcv.maxMemoryBoxes": {
+          "type": "number",
+          "default": 5,
+          "description": "How many memory lines to highlight per file."
+        },
+        "hcv.memoryMinBytes": {
+          "type": "number",
+          "default": 1000000,
+          "description": "Smallest memory a line needs to be highlighted (bytes; 1000000 = 1 MB)."
         }
       }
-    }
+    },
+    "submenus": [
+      {
+        "id": "hcv.viewMenu",
+        "label": "HCV: What to show",
+        "icon": "$(eye)"
+      }
+    ]
   },
   "capabilities": {
     "untrustedWorkspaces": {
@@ -106,5 +342,24 @@
         "hcv.visualizerFolder"
       ]
     }
-  }
+  },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e24",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AndreMercado/HardwareComputeVisualizer.git"
+  },
+  "homepage": "https://github.com/AndreMercado/HardwareComputeVisualizer/tree/main/vscode-extension",
+  "keywords": [
+    "python",
+    "profiler",
+    "performance",
+    "memory",
+    "hot spots",
+    "bottleneck",
+    "hardware"
+  ]
 }
