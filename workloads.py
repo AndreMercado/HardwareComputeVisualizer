@@ -436,10 +436,10 @@ def run_usercode(seconds, command):
             if path.lower().endswith((".py", ".pyw")):
                 command = f'"{python}" -u "{path}"{m.group(3)}'
         popen = dict(args=command, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    if want_cwd and os.path.isdir(want_cwd):
-        cwd = want_cwd
     else:
         popen = dict(args=["sh", "-c", command], start_new_session=True)
+    if want_cwd and os.path.isdir(want_cwd):
+        cwd = want_cwd
     env = dict(os.environ, PYTHONUNBUFFERED="1")
     try:
         proc = subprocess.Popen(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
