@@ -16,6 +16,7 @@ import getpass
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import tempfile
@@ -156,6 +157,72 @@ FMT = {"cpu_freq": "{:.0f}", "cpu_temp": "{:.0f}", "gpu_temp": "{:.0f}", "gpu_ut
        "loss": "{:.3f}", "cpu_power": "{:.1f}", "board_util": "{:.1f}", "pcie_rx": "{:.0f}",
        "pcie_tx": "{:.0f}", "board_temp": "{:.0f}", "cpu_core_max": "{:.0f}"}
 LOWER_IS_BETTER = {"frame_ms", "loss"}  # for the comparison with the previous run
+
+
+class Tooltip:
+    """A small hover note for a widget; `text` may be a function (asked each time it shows)."""
+
+    def __init__(self, widget, text, delay=450):
+        self.widget, self.text, self.delay = widget, text, delay
+        self.tip = self.job = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, _e=None):
+        self._hide()
+        self.job = self.widget.after(self.delay, self._show)
+
+    def _show(self):
+        text = self.text() if callable(self.text) else self.text
+        if not text:
+            return
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(self.tip, text=text, justify="left", bg="#1d2228", fg="#e6e6e6", font=(FONT, 10),
+                 relief="solid", bd=1, padx=8, pady=5, wraplength=380).pack()
+
+    def _hide(self, _e=None):
+        if self.job:
+            self.widget.after_cancel(self.job)
+            self.job = None
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+
+# what each reading means, in plain words (hover a reading's name)
+STAT_HELP = {
+    "cpu_util": "How busy the processor is overall: 100% = every core working all the time.",
+    "cpu_core_max": "The busiest single core. High here but low overall = one thread doing all the work (serial code).",
+    "cpu_freq": "How fast the processor is clocked right now. It speeds up under load and slows down when hot or idle.",
+    "cpu_temp": "Processor temperature. Windows only gives it out through LibreHardwareMonitor (needs admin once).",
+    "cpu_power": "Electrical power the processor uses, in watts (Windows' energy counter).",
+    "ram_util": "Share of the computer's memory (RAM) in use by all programs.",
+    "ram_used": "Memory in use by all programs, in gigabytes.",
+    "gpu_util": "How busy the graphics card is: 100% = always working.",
+    "gpu_vram": "The graphics card's own memory in use.",
+    "gpu_temp": "Graphics card temperature.",
+    "gpu_power": "Electrical power the graphics card uses, in watts.",
+    "board_util": "How busy the slot between the graphics card and the motherboard (PCIe) is, as a share of what it can carry.",
+    "pcie_rx": "Data moving from the computer's memory to the graphics card over PCIe.",
+    "pcie_tx": "Data moving from the graphics card back to the computer's memory.",
+    "board_temp": "Motherboard chipset temperature (through LibreHardwareMonitor, when the board's sensor names it).",
+    "disk_util": "Share of the time the disk is busy reading or writing. Near 100% = programs wait on it.",
+    "disk_read": "Data read from the disk per second.",
+    "disk_write": "Data written to the disk per second.",
+    "gbps": "Memory copy speed measured by the RAM test.",
+    "pcie_gbps": "Transfer speed measured by the PCIe test.",
+    "io_mbps": "Read/write speed measured by the disk test.",
+    "frame_ms": "Time to draw one frame in the 3D test: lower is faster (16.7 ms = 60 frames a second).",
+    "gflops": "Calculations per second in the ML test (billions of floating-point operations).",
+    "sps": "Training examples processed per second in the ML test.",
+    "loss": "The ML test's error: it falls as the network learns.",
+}
+STEP_DONE, STEP_NEXT, STEP_TODO = "#7ee787", "#ffd60a", "#5b6470"
 
 
 class _Dialogs:
@@ -336,6 +403,14 @@ class App:
         self.control = None      # control.ControlServer while AI CONTROL is on
         self.link = None         # the editor link (VS Code): always on, found through app.json
         self.editor_busy = False  # True while an editor request is being done
+        self.idle = None          # telemetry.Poller for the live readings while no test runs
+        self.idle_key = None      # (gpu, disk, LHM) it was made for: remade when the selection changes
+        self.idle_sample = None   # its latest reading
+        self.stat_fix = {}        # reading -> fix action for its "why is it missing" link
+        self._lhm_watch = 0.0     # until when to look for LibreHardwareMonitor after "SET UP"
+        self._lhm_next = 0.0
+        self._lhm_found = False   # set by the background LHM check, logged by the UI thread
+        self._input_hint = False  # the "it asked for input()" note was shown this run
         self._ai_queue = collections.deque()
         self._ai_busy = False
         messagebox.app = self
@@ -434,9 +509,18 @@ class App:
             if not self.options[key]:
                 self._grey_out(key)
 
+        # --- the three steps, so it's clear what to do next ---
+        steps = tk.Frame(outer, bg=BG)
+        steps.pack(pady=(14, 0))
+        self.step_labels = []
+        for i in range(3):
+            lab = tk.Label(steps, text="", bg=BG, fg=STEP_TODO, font=(FONT, 11, "bold"))
+            lab.pack(side="left", padx=14)
+            self.step_labels.append(lab)
+
         # --- controls ---
         ctl = tk.Frame(outer, bg=BG)
-        ctl.pack(pady=(18, 6))
+        ctl.pack(pady=(6, 6))
         self.test_var = tk.StringVar(value="2d")
         self.radios = []
         for k, t in TESTS.items():
@@ -447,6 +531,7 @@ class App:
                                overrelief="flat")
             r.pack(side="left", padx=3)
             self.radios.append(r)
+            Tooltip(r, lambda k=k: self._test_tip(k))
         self.btn_start = tk.Button(ctl, text="START", width=9, command=self.start_test,
                                    bg=ACCENT, fg="black", activebackground=lighten(ACCENT, 0.3),
                                    relief="flat", font=(FONT, 12, "bold"), disabledforeground="#1a3a14")
@@ -494,9 +579,33 @@ class App:
         self.btn_browse = tk.Button(coderow, text="…", width=3, bg=PANEL, fg=FG, relief="flat",
                                     command=self._browse_program)
         self.btn_browse.pack(side="left", padx=(4, 0))
+        Tooltip(self.btn_browse, "Pick the file that starts your program (a .py or .exe)")
+        self.btn_recent = tk.Button(coderow, text="▾", width=2, bg=PANEL, fg=FG, relief="flat",
+                                    command=self._recent_menu)
+        self.btn_recent.pack(side="left", padx=(2, 0))
+        Tooltip(self.btn_recent, "Programs you ran before")
+        tk.Label(coderow, text="FOLDER", bg=BG, fg=MUTED, font=(FONT, 10, "bold")).pack(side="left", padx=(12, 6))
+        self.folder_var = tk.StringVar()
+        self.folder_entry = tk.Entry(coderow, textvariable=self.folder_var, width=22, bg=PANEL, fg=FG,
+                                     insertbackground=FG, relief="flat", font=("Consolas", 10),
+                                     highlightthickness=1, highlightbackground=LINE, highlightcolor=ACCENT,
+                                     disabledbackground=PANEL)
+        self.folder_entry.pack(side="left", ipady=4)
+        Tooltip(self.folder_entry, "The folder your program runs in (where paths like data/input.csv are looked up). "
+                                   "Empty: the project's top folder (the one with .git, requirements.txt, ...) "
+                                   "or the program's own folder.")
+        self.btn_folder = tk.Button(coderow, text="…", width=3, bg=PANEL, fg=FG, relief="flat",
+                                    command=self._browse_folder)
+        self.btn_folder.pack(side="left", padx=(4, 0))
+        for v in (self.program_var, self.folder_var):
+            v.trace_add("write", lambda *a: self._show_plan())
         self.hintrow = tk.Label(optrow, text="", bg=BG, fg=MUTED, font=(FONT, 10))
         self.test_var.trace_add("write", lambda *a: self._sync_controls())
 
+        self.plan_anchor = tk.Frame(outer, bg=BG)
+        self.plan_anchor.pack(fill="x", padx=8)
+        # how YOUR CODE will run: which Python (the project's venv when there is one) and where
+        self.plan_label = tk.Label(self.plan_anchor, text="", bg=BG, fg=MUTED, font=(FONT, 9), anchor="w")
         self.status = tk.Label(outer, text="CLICK A PART OR SEARCH TO SELECT IT", font=(FONT, 11),
                                bg=BG, fg=MUTED, wraplength=820)
         self.status.pack(pady=(4, 8))
@@ -513,12 +622,15 @@ class App:
             r, c0 = n % per_col, 4 * (n // per_col)
             color = PARTS[part]["color"] if part in PARTS else "#b388ff"
             tk.Frame(grid, bg=color, width=3).grid(row=r, column=c0, sticky="ns", pady=1)
-            tk.Label(grid, text=label.upper(), bg=PANEL, fg=color, font=(FONT, 10, "bold"),
-                     anchor="w", width=19).grid(row=r, column=c0 + 1, sticky="w", padx=(8, 2), pady=1)
+            name = tk.Label(grid, text=label.upper(), bg=PANEL, fg=color, font=(FONT, 10, "bold"),
+                            anchor="w", width=19)
+            name.grid(row=r, column=c0 + 1, sticky="w", padx=(8, 2), pady=1)
+            Tooltip(name, STAT_HELP.get(key, ""))
             v = tk.Label(grid, text="—", bg=PANEL, fg=FG, font=("Consolas", 11, "bold"), anchor="e", width=15)
             v.grid(row=r, column=c0 + 2, sticky="e")
             s = tk.Label(grid, text=src, bg=PANEL, fg=MUTED, font=(FONT, 9), anchor="w")
             s.grid(row=r, column=c0 + 3, sticky="w", padx=(8, 4))
+            s.bind("<Button-1>", lambda e, k=key: self._run_fix(self.stat_fix.get(k)))
             self.stat_val[key], self.stat_src[key] = v, s
 
         tk.Label(outer, text="LOG  -  AI AGENT STEPS / YOUR PROGRAM'S OUTPUT", bg=BG, fg="#b388ff",
@@ -638,6 +750,7 @@ class App:
         path = filedialog.askopenfilename(title="Your program", filetypes=[
             ("Programs and scripts", "*.py *.exe *.bat *.cmd"), ("All files", "*.*")])
         if path:
+            self.folder_var.set("")  # the new program's project folder, unless one is typed
             self.program_var.set(f'"{os.path.normpath(path)}"')
 
     def open_compare(self):
@@ -1166,6 +1279,7 @@ class App:
             self.disk_index = self.options["disk"].index(value)
         self.canvas.itemconfig(self.shapes[key][0], width=3)  # colour is set per frame in _animate
         self._set_status(f"Selected: {PARTS[key]['label']} — {value}")
+        self._sync_controls()
 
     def _set_status(self, text, color=FG):
         self.status.config(text=text, fg=color)
@@ -1261,6 +1375,7 @@ class App:
                 cmd.append(folder)
             elif is_code:
                 cmd.append(command)
+                self._remember_program(command)
 
         self.script = script
         self.is_ai, self.is_code = is_ai, is_code
@@ -1279,6 +1394,7 @@ class App:
         self.lost_since = None
         self.msg_unavail = set()
         self.ai_steps = self.ai_blocked = 0
+        self._input_hint = False
         self.ai_done_text = self.ai_stop_text = None
         while not self.events.empty():
             self.events.get_nowait()
@@ -1289,6 +1405,9 @@ class App:
             self._log("", None, clear=True)
             where = f" on {self.remote.host} (in your home folder)" if self.remote else ""
             self._log(f"Running{where}: {command}", "info")
+            if not self.remote:
+                py, folder, note = self._code_plan(command)
+                self._log(f"  {note}", "info")
         self.sample_times.clear()
 
         disks = self.hw.get("disks") or []
@@ -1302,6 +1421,9 @@ class App:
                 env = None
                 if gpu and gpu["kind"] == "nvml" and not (is_ai or is_code):  # the GPU being watched
                     env = dict(os.environ, CUDA_DEVICE_ORDER="PCI_BUS_ID", CUDA_VISIBLE_DEVICES=str(gpu["index"]))
+                if is_code:
+                    py, folder, _ = self._code_plan(command)
+                    env = dict(os.environ, HCV_PYTHON=py or "", HCV_CWD=folder or "")
                 self.proc = subprocess.Popen(
                     [sys.executable] + cmd, env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
@@ -1433,9 +1555,14 @@ class App:
         running = getattr(self, "running", False)
         for b in (self.btn_replay, self.btn_compare):
             b.config(state="disabled" if running else "normal")
-        for r in self.radios:
-            r.config(state="disabled" if running else "normal")
+        for k, r in zip(TESTS, self.radios):
+            r.config(state="disabled" if running or not self._test_fits(k) else "normal")
         test = self.test_var.get()
+        if not running and not self._test_fits(test):  # the part changed: pick a test that fits it
+            fit = next((k for k in TESTS if self._test_fits(k)), None)
+            if fit and fit != test:
+                self.test_var.set(fit)  # calls back here
+                return
         for row in (self.goalrow, self.coderow, self.hintrow):
             row.pack_forget()
         if test == "ai":
@@ -1448,6 +1575,13 @@ class App:
         self.goal_menu.config(state="disabled" if running else "normal")
         self.program_entry.config(state="disabled" if running else "normal")
         self.btn_browse.config(state="disabled" if running or self.remote else "normal")
+        for w in (self.folder_entry, self.btn_folder, self.btn_recent):
+            w.config(state="disabled" if running or self.remote else "normal")
+        self.plan_label.pack_forget()
+        if test == "code":
+            self.plan_label.pack(side="left")
+            self._show_plan()
+        self._update_steps()
 
     def _log(self, text, tag, clear=False):
         self.log.config(state="normal")
@@ -1484,6 +1618,11 @@ class App:
                 self._log("  " + text.replace("\n", "\n  "), "result")
             elif ev == "out":
                 self._log(text, "say")
+                if "EOFError" in text and not self._input_hint:
+                    self._input_hint = True
+                    self._log("■ Your program asked for keyboard input (input()), which the visualizer can't type. "
+                              "Give it the input as arguments or a file - or run it from VS Code's yellow ▶ "
+                              "(it runs in a terminal there, where input() works).", "blocked")
             elif ev == "exit":
                 self.code_exit = text
                 self._log(f"■ {text}", "done")
@@ -1560,6 +1699,9 @@ class App:
         self._set_status(msg, "#f87171")
 
     def _on_close(self):
+        if self.idle:
+            self.idle.stop()
+            self.idle = None
         if self.control:
             self.control.close()
             self.control = None
@@ -1585,10 +1727,13 @@ class App:
                 self._drain_link()
             if self.control:
                 self._drain_control()
+            self._idle_sync()
             if self.running:
                 self._tick_running(now)
             elif self.remote and not self.remote.alive:
                 self._on_remote_lost()
+            elif self.idle:
+                self._tick_idle(now)
             self._animate(dt)
             if self.running and self.replay:
                 self.clock.config(text=f"▶ REPLAY (recorded)  {now - self.t_start:4.1f}s", fg=REPLAY_COLOR)
@@ -1600,7 +1745,7 @@ class App:
                 self.clock.config(text=f"{'●' if blink else '○'} LIVE  {now - self.t_start:5.1f}s   "
                                        f"{self.fps:3.0f} FPS · {len(self.sample_times):2d} Hz", fg="#ff3b3b")
             else:
-                self.clock.config(text="IDLE", fg=MUTED)
+                self.clock.config(text="IDLE · LIVE READINGS" if self.idle_sample else "IDLE", fg=MUTED)
         except Exception as e:  # never let the loop die (FR-17)
             self._set_status(f"Internal error: {e}", "#f87171")
         # aim at the next 1/60 s boundary (a fixed 16 ms wait drifts below 60 FPS on Windows)
@@ -1701,8 +1846,10 @@ class App:
 
     def _src(self, key, default):
         """Where a metric comes from on the current target (the poller may name another source)."""
-        p = self.poller
+        p = self.poller if self.running else self.idle
         src = (getattr(p, "sources", None) or {}).get(key, default)
+        if key in ("cpu_temp", "board_temp") and not self.remote and telemetry.LHM and src == default:
+            src = "LibreHardwareMonitor"
         link = (getattr(p, "info", None) or {}).get("pcie_link")
         if key == "board_util" and link and src == default:
             src = f"{src} · {link}"
@@ -1718,19 +1865,18 @@ class App:
             relevant = part == "wl" or part in self.involved
             if not relevant:
                 self.stat_val[key].config(text="—", fg=MUTED)
-                self.stat_src[key].config(text=src, fg=MUTED)
+                self._set_src(key, src, MUTED)
             elif v is None and part == "wl":
                 self.stat_val[key].config(text="—", fg=MUTED)
-                self.stat_src[key].config(text="not in this test", fg=MUTED)
+                self._set_src(key, "not in this test", MUTED)
             elif v is None:
-                reason = src
                 self.stat_val[key].config(text="unavailable", fg="#f87171")
-                self.stat_src[key].config(text=reason, fg="#f87171")
+                self._show_missing(key, src)
                 if part in PARTS:
                     unavail.add(key)
             else:
                 self.stat_val[key].config(text=f"{FMT.get(key, '{:.2f}').format(v)} {unit}", fg=FG)
-                self.stat_src[key].config(text=src, fg=MUTED)
+                self._set_src(key, src, MUTED)
         # UC-12: if every metric of the target part fails for a second, the run can't be shown
         # truthfully (a second, because some readings need a moment to produce their first value)
         target_keys = [k for k, _, _, pt, _ in STATS if pt == self.target and k not in OPTIONAL]
@@ -1757,9 +1903,14 @@ class App:
 
     def _target_levels(self):
         """Latest real utilization 0..1 per part (None = unavailable)."""
-        s = self.poller.latest if self.poller else {}
+        idle = not self.running and self.idle_sample is not None
+        s = self.idle_sample if idle else (self.poller.latest if self.poller else {})
         out = {}
         for part in ORDER:
+            if idle:  # live readings while no test runs: every part, as it is
+                v = s.get(f"{part}_util")
+                out[part] = 0.0 if v is None else v / 100.0
+                continue
             if not self.running or part not in self.involved:
                 out[part] = 0.0
                 continue
@@ -1805,7 +1956,10 @@ class App:
                     c = (mix(mix(base, BG, 0.3), lighten(base, 0.4), i / SEGMENTS)) if i < lit else "#1a1a1a"
                     self.canvas.itemconfig(seg, fill=c)
             show = self.running and key in self.involved
-            if show and targets[key] is not None:
+            if not self.running and self.idle_sample is not None and self.idle_sample.get(f"{key}_util") is not None:
+                # idle: the live value, quieter than during a test
+                self.canvas.itemconfig(sub, text=f"{lv * 100:.0f}%", fill=mix(base, BG, 0.35), font=(FONT, 26, "bold"))
+            elif show and targets[key] is not None:
                 self.canvas.itemconfig(sub, text=f"{lv * 100:.0f}%", fill=lighten(base, 0.5), font=(FONT, 36, "bold"))
             elif show:
                 self.canvas.itemconfig(sub, text="UNAVAILABLE", fill="#ff5c5c", font=(FONT, 13, "bold"))
@@ -1827,6 +1981,9 @@ class App:
         if self.running and "cpu" in self.involved and self.poller:
             c = (self.poller.latest or {}).get("cpu_cores")
             cores = c if isinstance(c, list) and c else None
+        elif not self.running and self.idle_sample:
+            c = self.idle_sample.get("cpu_cores")
+            cores = c if isinstance(c, list) and c else None
         n = len(self.core_bars)
         lit = lighten(PARTS["cpu"]["color"], 0.3)
         for i in range(n):
@@ -1845,8 +2002,8 @@ class App:
                 self.canvas.itemconfig(self.core_bars[i], fill=mix(PARTS["cpu"]["color"], lit, self.core_lv[i]))
         for (a, b), item in self.links.items():
             flow = (self.level[a] + self.level[b]) / 2
-            if self.running and flow > 0.02:
-                self.dash_off[(a, b)] -= dt * (20 + 160 * flow)
+            if (self.running or self.idle_sample is not None) and flow > 0.02:
+                self.dash_off[(a, b)] -= dt * ((20 + 160 * flow) if self.running else (10 + 60 * flow))
                 trace = mix(PARTS[a]["color"], PARTS[b]["color"], 0.5)
                 self.canvas.itemconfig(item, dashoffset=int(self.dash_off[(a, b)]),
                                        fill=mix(GREY, lighten(trace, 0.3), flow))
@@ -1859,7 +2016,264 @@ class App:
             if key in ("cpu_temp", "board_temp") and not self.remote and telemetry.LHM:
                 src = "LibreHardwareMonitor"  # running: the readings come from it during a test
             self.stat_val[key].config(text="—", fg=MUTED)
-            self.stat_src[key].config(text=src, fg=MUTED)
+            self._set_src(key, src, MUTED)
+
+    # ------------------------------------------------------------ live readings while idle
+    def _idle_sync(self):
+        """Keeps a slow poller running while no test runs on this PC, so the readings and the
+        diagram are live; remade when the chosen GPU / disk changes or LHM appears."""
+        want = not self.running and not self.remote
+        key = (self.gpu_index, self.disk_index, telemetry.LHM)
+        if self.idle and (not want or key != self.idle_key):
+            self.idle.stop()
+            self.idle, self.idle_sample = None, None
+            if not want:
+                self._clear_readout()
+        if want and not self.idle:
+            gpus, disks = self.hw.get("gpu_info") or [], self.hw.get("disks") or []
+            gpu = gpus[self.gpu_index] if gpus and self.gpu_index < len(gpus) else None
+            disk = disks[self.disk_index] if disks and self.disk_index < len(disks) else None
+            try:
+                self.idle = telemetry.Poller(gpu, disk, hz=4)
+                self.idle.start()
+                self.idle_key = key
+            except Exception as e:  # never stop the app over the extra readings
+                self.idle = None
+                self._log(f"Live readings unavailable: {e}", "info")
+
+    def _tick_idle(self, now):
+        s = self.idle.latest
+        if s and s is not self.idle_sample:
+            self.idle_sample = s
+            for key, label, unit, part, src in STATS:
+                src = self._src(key, src)
+                v = s.get(key)
+                if part == "wl":
+                    self.stat_val[key].config(text="—", fg=MUTED)
+                    self._set_src(key, "shown during its test", MUTED)
+                elif v is None:
+                    self.stat_val[key].config(text="—", fg=MUTED)
+                    self._show_missing(key, src)
+                else:
+                    self.stat_val[key].config(text=f"{FMT.get(key, '{:.2f}').format(v)} {unit}", fg=MUTED)
+                    self._set_src(key, src, MUTED)
+        if self._lhm_found:
+            self._lhm_found = False
+            self._log("LibreHardwareMonitor found: CPU and chipset temperatures are readable now.", "done")
+        # after "SET UP" for LibreHardwareMonitor: look for it now and then
+        if now < self._lhm_watch and now >= self._lhm_next:
+            self._lhm_next = now + 5
+            threading.Thread(target=self._probe_lhm_bg, daemon=True).start()
+
+    def _probe_lhm_bg(self):
+        """Runs on a thread: only sets flags (Tk may only be touched from the UI thread)."""
+        if telemetry.probe_lhm():
+            self._lhm_watch = 0.0
+            self.hw["cpu_temp"] = True
+            self._lhm_found = True
+
+    # ------------------------------------------------------------ why a reading is missing, and the fix
+    def _set_src(self, key, text, color, fix=None):
+        self.stat_fix[key] = fix
+        self.stat_src[key].config(text=text, fg=color, cursor="hand2" if fix else "")
+
+    def _why_missing(self, key, src):
+        """(reason, fix or None) for a reading that has no value."""
+        nvml_ok = telemetry.nvgpu.OK
+        gpus = self.hw.get("gpu_info") or []
+        has_nv = any(g.get("kind") == "nvml" for g in gpus)
+        names = " ".join(str(g.get("name", "")) for g in gpus).lower()
+        if self.remote:
+            return ("not exposed by the remote machine", None)
+        if key in ("cpu_temp", "board_temp"):
+            if not telemetry.LHM:
+                return ("needs LibreHardwareMonitor · SET UP ›", "lhm")
+            return ("board has no named sensor" if key == "board_temp" else "LHM has no reading", None)
+        if key in ("board_util", "pcie_rx", "pcie_tx"):
+            if not nvml_ok and "nvidia" in names:
+                return ("needs the nvidia-ml-py package · INSTALL ›", "pip:nvidia-ml-py")
+            if not has_nv:
+                return ("needs an NVIDIA graphics card (NVML)", None)
+        if key.startswith("gpu_"):
+            if not gpus:
+                return ("no graphics card found", None)
+            if not nvml_ok and "nvidia" in names:
+                return ("needs the nvidia-ml-py package · INSTALL ›", "pip:nvidia-ml-py")
+            if not has_nv and key in ("gpu_temp", "gpu_power") and not telemetry.LHM:
+                return ("needs LibreHardwareMonitor for this GPU · SET UP ›", "lhm")
+        if key == "cpu_power":
+            return ("Windows doesn't report it for this processor", None)
+        if key == "disk_util":
+            return ("Windows' disk counter isn't available", None)
+        if key == "cpu_freq":
+            return ("not reported on this PC", None)
+        return (src, None)
+
+    def _show_missing(self, key, src):
+        reason, fix = self._why_missing(key, src)
+        self._set_src(key, reason, "#f0b429" if fix else "#f87171", fix)
+
+    def _run_fix(self, fix):
+        if not fix:
+            return
+        if fix == "lhm":
+            script = os.path.join(HERE, "setup_lhm.ps1")
+            if not messagebox.askokcancel(
+                    "Set up LibreHardwareMonitor",
+                    "Windows only gives out CPU and chipset temperatures (and AMD / Intel GPU temperatures) through "
+                    "LibreHardwareMonitor running as administrator.\n\nThis downloads LibreHardwareMonitor 0.9.6 "
+                    "(checked against its known hash), starts it hidden in the tray at every logon and keeps its "
+                    "port closed to other machines. Windows asks once for admin rights.\n\nGo ahead?"):
+                return
+            try:
+                subprocess.Popen(["powershell", "-ExecutionPolicy", "Bypass", "-File", script],
+                                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+            except OSError as e:
+                messagebox.showerror("Set up LibreHardwareMonitor", f"Couldn't start the setup: {e}")
+                return
+            self._lhm_watch = time.monotonic() + 180  # look for it for 3 minutes
+            self._log("Setting up LibreHardwareMonitor in a separate window - the temperatures appear here "
+                      "once it runs.", "info")
+        elif fix.startswith("pip:"):
+            pkg = fix[4:]
+            if not messagebox.askokcancel("Install " + pkg, f"Install the Python package {pkg} into this Python "
+                                          f"({sys.executable})?\n\nRestart the app when it has finished."):
+                return
+            try:
+                subprocess.Popen([sys.executable, "-m", "pip", "install", pkg],
+                                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+            except OSError as e:
+                messagebox.showerror("Install " + pkg, f"Couldn't start pip: {e}")
+                return
+            self._log(f"Installing {pkg} in a separate window - restart the app when it's done.", "info")
+
+    # ------------------------------------------------------------ steps and which tests fit
+    def _test_fits(self, key):
+        t = TESTS[key]
+        if t.get("local_only") and self.remote:
+            return False
+        return self.selected is None or self.selected in t["targets"]
+
+    def _test_tip(self, key):
+        t = TESTS[key]
+        parts = ", ".join(PARTS[p]["label"] for p in t["targets"]) if len(t["targets"]) < len(ORDER) else "any part"
+        what = {"2d": "Draws Mandelbrot frames on every CPU core, or copies big blocks of memory (RAM).",
+                "3d": "Renders a 3D scene with OpenGL and measures the frame time.",
+                "ml": "Trains a small neural network with PyTorch.",
+                "io": "Writes then reads a 1 GB temporary file, bypassing the cache.",
+                "bus": "Moves 256 MB blocks between the computer's memory and the graphics card.",
+                "ai": "A local AI model (Ollama) decides what code to run, in a sandbox.",
+                "code": "Your own program: pick the file that starts it."}.get(key, "")
+        tip = f"{t['label']}: {what}\nWorks on: {parts}."
+        if t.get("local_only") and self.remote:
+            tip += "\nThis PC only - switch the target to THIS PC."
+        elif not self._test_fits(key):
+            tip += f"\nNot for {PARTS[self.selected]['label']} - pick {parts.split(',')[0]} first."
+        return tip
+
+    def _update_steps(self):
+        running = getattr(self, "running", False)
+        part = PARTS[self.selected]["label"] if self.selected else None
+        test = TESTS[self.test_var.get()]["short"]
+        need_prog = self.test_var.get() == "code" and not self.program_var.get().strip()
+        texts = [f"① PART: {part} ✓" if part else "① CLICK A PART",
+                 f"② TEST: {test}" + (" - pick your program below" if need_prog else (" ✓" if part else "")),
+                 "③ RUNNING…" if running else "③ PRESS START"]
+        states = [bool(part), bool(part) and not need_prog, running]
+        nxt = next((i for i, done in enumerate(states) if not done), None)
+        for i, lab in enumerate(self.step_labels):
+            lab.config(text=texts[i], fg=STEP_DONE if states[i] else (STEP_NEXT if i == nxt else STEP_TODO))
+
+    # ------------------------------------------------------------ YOUR CODE: folder, Python, recent programs
+    def _code_plan(self, command):
+        """(python, folder, note): how YOUR CODE will run. A .py file runs with the project's venv
+        (.venv / venv / env next to it or in the project's top folder) or this Python, in the FOLDER
+        field or the project's top folder (.git, requirements.txt... - like VS Code's Run)."""
+        import profiler
+        m = re.match(r'\s*(?:"([^"]+)"|(\S+))(.*)$', command or "")
+        first = (m.group(1) or m.group(2)) if m else ""
+        folder = self.folder_var.get().strip().strip('"')
+        python = None
+        script = first if first.lower().endswith((".py", ".pyw")) and os.path.isfile(first) else None
+        if not script and os.path.isfile(first) and m:  # "python.exe" "script.py" ...
+            m2 = re.match(r'\s*(?:"([^"]+)"|(\S+))', m.group(3))
+            second = (m2.group(1) or m2.group(2)) if m2 else ""
+            if second.lower().endswith(".py") and os.path.isfile(second):
+                folder = folder or profiler.project_root(second)
+        if script:
+            root = profiler.project_root(script)
+            folder = folder or root
+            for base in dict.fromkeys([os.path.dirname(os.path.abspath(script)), root, folder]):
+                for name in (".venv", "venv", "env"):
+                    exe = os.path.join(base, name, "Scripts" if os.name == "nt" else "bin",
+                                       "python.exe" if os.name == "nt" else "python")
+                    if os.path.isfile(os.path.join(base, name, "pyvenv.cfg")) and os.path.isfile(exe):
+                        python = exe
+                        break
+                if python:
+                    break
+        if folder and not os.path.isdir(folder):
+            return python, None, f"Folder not found: {folder}"
+        def short(path, n=48):
+            return path if len(path) <= n else "…" + path[-(n - 1):]
+        if script:
+            if python:
+                rel = os.path.relpath(python, folder) if folder else python
+                py_text = f"the project's venv ({rel if not rel.startswith('..') else short(python)})"
+            else:
+                py_text = f"this Python ({short(sys.executable, 40)})"
+            note = f"Runs with {py_text}  ·  in {short(folder)}"
+        elif command:
+            where = folder or (os.path.dirname(first) if os.path.isfile(first) else "your home folder")
+            note = f"Runs as typed  ·  in {short(where)}"
+        else:
+            note = ""
+        return python, folder or None, note
+
+    def _show_plan(self):
+        if self.test_var.get() != "code":
+            return
+        cmd = self.program_var.get().strip()
+        _, _, note = self._code_plan(cmd) if cmd else (None, None, "")
+        self.plan_label.config(text=note or "Pick the file that starts your program (…), or type a command line.")
+        self._update_steps()
+
+    def _browse_folder(self):
+        path = filedialog.askdirectory(title="Folder your program runs in")
+        if path:
+            self.folder_var.set(os.path.normpath(path))
+
+    def _recent_file(self):
+        return os.path.join(DATA, "recent_programs.json")
+
+    def _recent(self):
+        try:
+            with open(self._recent_file(), encoding="utf-8") as f:
+                items = json.load(f)
+            return [i for i in items if isinstance(i, dict) and i.get("command")][:10]
+        except (OSError, ValueError):
+            return []
+
+    def _remember_program(self, command):
+        items = [i for i in self._recent() if i["command"] != command]
+        items.insert(0, {"command": command, "folder": self.folder_var.get().strip()})
+        try:
+            with open(self._recent_file(), "w", encoding="utf-8") as f:
+                json.dump(items[:10], f)
+        except OSError:
+            pass
+
+    def _recent_menu(self):
+        items = self._recent()
+        menu = tk.Menu(self.root, tearoff=0, bg=PANEL, fg=FG, activebackground=ACCENT, activeforeground="black")
+        if not items:
+            menu.add_command(label="(nothing run yet)", state="disabled")
+        for it in items:
+            label = it["command"] + (f"   [{it['folder']}]" if it.get("folder") else "")
+            menu.add_command(label=label[:110], command=lambda it=it: (self.program_var.set(it["command"]),
+                                                                       self.folder_var.set(it.get("folder", ""))))
+        x, y = self.btn_recent.winfo_rootx(), self.btn_recent.winfo_rooty() + self.btn_recent.winfo_height()
+        menu.tk_popup(x, y)
 
     def _set_summary(self, text):
         self.summary.config(state="normal")

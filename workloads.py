@@ -425,14 +425,19 @@ def run_usercode(seconds, command):
 
     win = sys.platform == "win32"
     cwd = os.path.expanduser("~")
+    # the app works out the folder and the Python (the project's venv) and hands them over
+    want_cwd = os.environ.get("HCV_CWD") or ""
+    python = os.environ.get("HCV_PYTHON") or sys.executable
     if win:
         m = re.match(r'\s*(?:"([^"]+)"|(\S+))(.*)$', command)
         path = (m.group(1) or m.group(2)) if m else ""
         if os.path.isfile(path):
             cwd = os.path.dirname(os.path.abspath(path))
             if path.lower().endswith((".py", ".pyw")):
-                command = f'"{sys.executable}" -u "{path}"{m.group(3)}'
+                command = f'"{python}" -u "{path}"{m.group(3)}'
         popen = dict(args=command, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if want_cwd and os.path.isdir(want_cwd):
+        cwd = want_cwd
     else:
         popen = dict(args=["sh", "-c", command], start_new_session=True)
     env = dict(os.environ, PYTHONUNBUFFERED="1")

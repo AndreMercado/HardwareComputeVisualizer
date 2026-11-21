@@ -437,7 +437,8 @@ class Poller:
     `sources` names where each metric comes from; `info` holds text facts
     (the PCIe link) that are not numbers."""
 
-    def __init__(self, gpu=None, disk=None):
+    def __init__(self, gpu=None, disk=None, hz=None):
+        self.hz = hz or POLL_HZ  # the live idle readings use a slower rate than a test
         self.gpu_info = gpu   # one entry of detect_hardware()['gpu_info'], or None
         self.disk = disk      # one entry of detect_hardware()['disks'], or None
         self.latest = {}
@@ -576,7 +577,7 @@ class Poller:
         return sum(dt * v for _, dt, v in self._rapl_hist) / span / 1000
 
     def _run(self):
-        period = 1.0 / POLL_HZ
+        period = 1.0 / self.hz
         while not self._stop.is_set():
             t0 = time.monotonic()
             try:
