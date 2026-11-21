@@ -2,8 +2,14 @@
 
 Switched on with the AI CONTROL button (or `python main.py --ai-control`).
 Every request must carry the header `X-HCV-Token: <token>`; the token is
-written to control_token.txt next to this file when control starts (a new
-one each time). A web page can't send that header to another site, so a
+written to control_token.txt in the data folder when control starts (a new
+one each time).
+
+The same server also runs as the **editor link** (always on while the app is open,
+on a free port): the VS Code extension finds it through `app.json` in the user's
+HCV folder (%LOCALAPPDATA%/HCV on Windows) - port, token, app folder - so it
+connects without any settings. Editor requests are done at once, without the AI's
+banners and pauses, and only a few actions are allowed (EDITOR_ACTIONS). A web page can't send that header to another site, so a
 browser can't drive the app; local programs that can read the file can.
 
 Requests are handed to the app's UI thread, which shows each action (banner,
@@ -33,21 +39,52 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import sys
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOKEN_FILE = os.path.join(HERE, "control_token.txt")
+
+
+def user_dir():
+    """The user's own HCV folder (not inside the app): %LOCALAPPDATA%/HCV, ~/.local/share/hcv."""
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
+        return os.path.join(base, "HCV")
+    return os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "hcv")
+
+
+def data_dir():
+    """Where runs, the AI workspace and tokens go: HCV_DATA_DIR if set (the VS Code extension sets it
+    when it starts the app it carries), else this folder (a copy of the repo) when it can be written."""
+    d = os.environ.get("HCV_DATA_DIR")
+    if not d:
+        d = HERE if os.access(HERE, os.W_OK) and ".vscode" not in HERE.split(os.sep) else user_dir()
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+DATA_DIR = data_dir()
+TOKEN_FILE = os.path.join(DATA_DIR, "control_token.txt")
+DISCOVERY_FILE = os.path.join(user_dir(), "app.json")  # how the VS Code extension finds the running app
 PORT = 8770
 ACTIONS = {"state", "summary", "runs", "select", "test", "program", "ai_task", "start", "stop", "wait",
            "replay", "compare", "remote", "local"}
+# what the editor link may do: run a program and watch it, nothing else
+EDITOR_ACTIONS = {"state", "summary", "select", "test", "program", "start", "stop", "wait", "hello"}
+APP_VERSION = "0.2.0"
 
 
 class ControlServer:
     """Runs the HTTP server on a thread; requests become (action, args, reply queue)
     items in `self.requests`, which the app drains on its UI thread."""
 
-    def __init__(self, port=PORT):
+    def __init__(self, port=PORT, token_file=TOKEN_FILE, actions=ACTIONS):
+        """port=0 picks a free port; token_file=None keeps the token in memory (the editor link
+        publishes it in app.json instead)."""
         self.token = secrets.token_hex(16)
         self.requests = queue.Queue()
         self.port = port
+        self.token_file = token_file
+        self.actions = actions
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -66,8 +103,11 @@ class ControlServer:
                 if not secrets.compare_digest(self.headers.get("X-HCV-Token", ""), server.token):
                     return self._reply(403, {"error": "missing or wrong X-HCV-Token (see control_token.txt)"})
                 action = self.path.strip("/").split("?")[0]
-                if action not in ACTIONS:
-                    return self._reply(404, {"error": f"unknown action {action!r}", "actions": sorted(ACTIONS)})
+                if action not in server.actions:
+                    return self._reply(404, {"error": f"unknown action {action!r}", "actions": sorted(server.actions)})
+                if action == "hello":  # the editor checking the app is there
+                    return self._reply(200, {"app": "Hardware Compute Visualizer", "version": APP_VERSION,
+                                             "pid": os.getpid(), "folder": HERE})
                 args = {}
                 if method == "POST":
                     try:
@@ -95,8 +135,10 @@ class ControlServer:
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
         self.httpd.daemon_threads = True
-        with open(TOKEN_FILE, "w", encoding="utf-8") as f:
-            f.write(self.token)
+        self.port = self.httpd.server_address[1]
+        if token_file:
+            with open(token_file, "w", encoding="utf-8") as f:
+                f.write(self.token)
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def wait(self, args):
@@ -118,7 +160,32 @@ class ControlServer:
     def close(self):
         self.httpd.shutdown()
         self.httpd.server_close()
-        try:
-            os.remove(TOKEN_FILE)
-        except OSError:
-            pass
+        if self.token_file:
+            try:
+                os.remove(self.token_file)
+            except OSError:
+                pass
+
+
+def publish_link(server):
+    """Tells editors where the running app's link is: app.json in the user's HCV folder."""
+    info = {"app": "Hardware Compute Visualizer", "version": APP_VERSION, "pid": os.getpid(),
+            "port": server.port, "token": server.token, "folder": HERE, "data": DATA_DIR,
+            "python": sys.executable, "started": time.time()}
+    os.makedirs(os.path.dirname(DISCOVERY_FILE), exist_ok=True)
+    tmp = DISCOVERY_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(info, f)
+    os.replace(tmp, DISCOVERY_FILE)
+    return info
+
+
+def unpublish_link():
+    """Removes app.json - only if it is still this app's (a second app may have taken over)."""
+    try:
+        with open(DISCOVERY_FILE, encoding="utf-8") as f:
+            if json.load(f).get("pid") != os.getpid():
+                return
+        os.remove(DISCOVERY_FILE)
+    except (OSError, ValueError):
+        pass

@@ -43,6 +43,7 @@ FONT = "Bahnschrift"  # Windows' condensed techy UI face; Tk falls back if missi
 ACCENT = "#44d62c"    # brand green (title, Start)
 REPLAY_COLOR = "#ffb400"  # everything that marks "this is a recording, not live"
 AI_COLOR = "#c77dff"      # everything an AI does through AI CONTROL
+EDITOR_COLOR = "#4fc1ff"  # what VS Code asked for (editor link) and the links back into the code
 SEGMENTS = 22         # lit segments in each part's meter
 CANVAS_W, CANVAS_H = 840, 270
 HISTORY = 150         # points in each part's scrolling graph (one per 3 frames)
@@ -112,9 +113,10 @@ OBSERVED = {"cpu2d": ("gpu", "ram"), "ram": ("cpu",), "gpu3d": ("cpu", "ram", "b
             "mlgpu": ("cpu", "ram", "board"), "mlcpu": ("ram",), "disk": ("cpu", "ram"),
             "pcie": ("ram", "cpu", "gpu"), "agent": tuple(ORDER), "usercode": tuple(ORDER)}
 HERE = os.path.dirname(os.path.abspath(__file__))
-AI_DIR = os.path.join(HERE, "ai_workspace")
-RUNS_DIR = os.path.join(HERE, "runs")  # one JSON file per finished run (record / compare / replay)
-REMOTE_FILE = os.path.join(HERE, "remote_target.json")  # last remote host/user/port/key *path* - no secrets
+DATA = control.DATA_DIR  # this folder, or the user's HCV folder when the app runs from the VS Code extension
+AI_DIR = os.path.join(DATA, "ai_workspace")
+RUNS_DIR = os.path.join(DATA, "runs")  # one JSON file per finished run (record / compare / replay)
+REMOTE_FILE = os.path.join(DATA, "remote_target.json")  # last remote host/user/port/key *path* - no secrets
 
 # key, label, unit, part (or "wl" = measured by the workload), default source
 # (the poller names a different source where it has one: remote machine, AMD/Intel GPU...)
@@ -167,11 +169,14 @@ class _Dialogs:
         self.notes = []  # what the dialogs said during the current AI action
 
     def _ai(self):
-        return self.app is not None and self.app.control is not None
+        return self.app is not None and (self.app.control is not None or self.app.editor_busy)
 
     def _note(self, kind, title, msg):
         self.notes.append({"kind": kind, "title": title, "text": msg})
-        self.app._log(f"🤖 [{title}] {msg}", "ai")
+        if self.app.editor_busy:
+            self.app._log(f"💻 [{title}] {msg}", "editor")
+        else:
+            self.app._log(f"🤖 [{title}] {msg}", "ai")
 
     def showerror(self, title, msg, **kw):
         return self._note("error", title, msg) if self._ai() else _messagebox.showerror(title, msg, **kw)
@@ -329,6 +334,8 @@ class App:
         root.geometry(f"{w}x{h}+{(root.winfo_screenwidth() - w) // 2}+{max(0, (root.winfo_screenheight() - h) // 2 - 20)}")
 
         self.control = None      # control.ControlServer while AI CONTROL is on
+        self.link = None         # the editor link (VS Code): always on, found through app.json
+        self.editor_busy = False  # True while an editor request is being done
         self._ai_queue = collections.deque()
         self._ai_busy = False
         messagebox.app = self
@@ -520,7 +527,7 @@ class App:
                            state="disabled", wrap="word", highlightthickness=1, highlightbackground=LINE)
         self.log.pack(fill="x", pady=(0, 8))
         for tag, color in (("say", FG), ("tool", ACCENT), ("result", MUTED), ("blocked", "#ff5c5c"),
-                           ("done", "#b388ff"), ("info", MUTED), ("ai", AI_COLOR)):
+                           ("done", "#b388ff"), ("info", MUTED), ("ai", AI_COLOR), ("editor", EDITOR_COLOR)):
             self.log.tag_config(tag, foreground=color)
         self._log("AI BENCHMARK: pick AI BENCHMARK + a task + a part, then START. The agent's steps appear here.",
                   "info")
@@ -636,6 +643,46 @@ class App:
     def open_compare(self):
         if not self.running:
             CompareWindow(self.root)
+
+    # ------------------------------------------------------------ editor link (VS Code)
+    def _open_link(self):
+        """The editor link: a token-protected local API on a free port, published in app.json so the
+        VS Code extension connects by itself. No banners or pauses: you started it from the editor."""
+        try:
+            self.link = control.ControlServer(port=0, token_file=None, actions=control.EDITOR_ACTIONS)
+            control.publish_link(self.link)
+        except OSError as e:
+            self.link = None
+            self._log(f"VS Code link unavailable: {e}", "info")
+
+    def _drain_link(self):
+        while True:
+            try:
+                action, args, reply = self.link.requests.get_nowait()
+            except queue.Empty:
+                return
+            if action not in ("state", "summary"):
+                desc, _ = self._ai_describe(action, args)
+                self._log(f"💻 VS Code → {desc}", "editor")
+            messagebox.notes = []
+            self.editor_busy = True
+            try:
+                reply.put(self._ai_do(action, args))
+            except Exception as e:  # report, never kill the UI loop
+                reply.put((500, {"error": f"{type(e).__name__}: {e}"}))
+            finally:
+                self.editor_busy = False
+
+    def _open_in_editor(self, file, line):
+        """A line of the user's code in VS Code (vscode://file/...), else the file itself."""
+        uri = "vscode://file/" + os.path.abspath(file).replace("\\", "/") + f":{line}"
+        try:
+            if sys.platform == "win32":
+                os.startfile(uri)
+            else:
+                subprocess.Popen(["xdg-open" if sys.platform != "darwin" else "open", uri])
+        except OSError as e:
+            self._log(f"Can't open {file}:{line} in VS Code: {e}", "blocked")
 
     # ------------------------------------------------------------ AI control (control.py)
     def toggle_ai_control(self):
@@ -838,7 +885,7 @@ class App:
         if action == "stop":
             if not self.running:
                 return bad("nothing is running")
-            self.stop_test("stopped by AI")
+            self.stop_test("stopped from VS Code" if self.editor_busy else "stopped by AI")
             return ok(stopped=True)
         if action == "replay":
             path = os.path.join(RUNS_DIR, os.path.basename(str(args.get("run", ""))))
@@ -1335,6 +1382,8 @@ class App:
                "part": self.target, "part_name": self.target_name, "involved": list(self.involved),
                "hardware": self.options, "result": result, "duration": round(duration, 2),
                "program": self.program, "threads": self.hw.get("threads"),
+               # wall clock at t=0 of the samples: lines them up with a profile of the same run
+               "started_epoch": time.time() - (time.monotonic() - self.t_start),
                "averages": {k: sum(v) / len(v) for k, v in self.samples.items() if v},
                "findings": findings, "summary": summary, "samples": self.record}
         try:
@@ -1343,7 +1392,22 @@ class App:
                 json.dump(run, f)
         except OSError:
             return None
+        self._link_profile(run, name)
         return name
+
+    def _link_profile(self, run, name):
+        """YOUR CODE that ran the line profiler (VS Code: Profile in the Hardware Visualizer): this
+        recording and its bottlenecks go into the profile too, so the editor shows them per line."""
+        import profiler
+        out = profiler.profile_of_command(self.program) if self.test_key == "code" and not self.remote else None
+        if not out or not os.path.isfile(out):
+            return
+        try:
+            if profiler.link_visualizer_run(out, run, name):
+                self._log(f"Linked this recording to the code profile {out}", "info")
+                self._code_links = _code_lines(out)
+        except Exception as e:  # the run itself is saved either way
+            self._log(f"Couldn't link the recording to {out}: {e}", "blocked")
 
     def _previous_run(self):
         """Newest saved run of the same test on the same part and hardware, or None."""
@@ -1499,6 +1563,10 @@ class App:
         if self.control:
             self.control.close()
             self.control = None
+        if self.link:
+            control.unpublish_link()
+            self.link.close()
+            self.link = None
         self.stop_test("closed", summary=False)
         if self.remote:
             self.remote.close()
@@ -1513,6 +1581,8 @@ class App:
         if raw_dt > 0:
             self.fps += (1.0 / raw_dt - self.fps) * 0.05
         try:
+            if self.link:
+                self._drain_link()
             if self.control:
                 self._drain_control()
             if self.running:
@@ -1795,6 +1865,17 @@ class App:
         self.summary.config(state="normal")
         self.summary.delete("1.0", "end")
         self.summary.insert("1.0", text)
+        # the code run's slowest lines, each a link into VS Code
+        links, self._code_links = getattr(self, "_code_links", []), []
+        if links:
+            self.summary.insert("end", "\n\nWhere in your code (click to open in VS Code):\n")
+            for i, (file, line, label) in enumerate(links):
+                tag = f"code{i}"
+                self.summary.insert("end", f"  {label}\n", tag)
+                self.summary.tag_config(tag, foreground=EDITOR_COLOR, underline=True)
+                self.summary.tag_bind(tag, "<Button-1>", lambda e, f=file, n=line: self._open_in_editor(f, n))
+                self.summary.tag_bind(tag, "<Enter>", lambda e: self.summary.config(cursor="hand2"))
+                self.summary.tag_bind(tag, "<Leave>", lambda e: self.summary.config(cursor=""))
         self.summary.config(state="disabled")
 
     def _show_summary(self, result, duration):
@@ -1838,6 +1919,7 @@ class App:
             lines.append(f"Compared with the previous run of this test on this part ({prev.get('when', '?')}, "
                          f"{prev.get('result', '?')}).")
         lines += [""] + analysis.report(findings)
+        self._code_links = []
         saved = self._save_run(result, duration, "\n".join(lines), findings)
         lines.append("")
         lines.append(f"Recorded as runs/{saved} - REPLAY watches it again, COMPARE puts it next to another run."
@@ -2031,6 +2113,25 @@ class CompareWindow:
         c.create_text(x1 - 30, y0, text="B", anchor="ne", fill=self.COLORS[1], font=(FONT, 11, "bold"))
 
 
+def _code_lines(profile_path, n=6):
+    """[(file, line, label)] for the slowest lines of a code profile, for the summary's links."""
+    try:
+        with open(profile_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    root = data.get("root") or os.path.dirname(data.get("script") or "")
+    out = []
+    for l in (data.get("lines") or [])[:n]:
+        try:
+            rel = os.path.relpath(l["file"], root)
+        except ValueError:
+            rel = l["file"]
+        out.append((l["file"], l["line"], f"{rel}:{l['line']}  {l['func']}  {l['seconds']:.2f} s  "
+                    f"({100 * l['share']:.0f}% of the run)"))
+    return out
+
+
 def _fine_timer(on):
     """Windows wakes timers every 15.6 ms by default, which caps Tk's after() loop at ~48 FPS.
     Ask for 1 ms while the app runs (what games and media players do); undone on exit."""
@@ -2045,6 +2146,7 @@ if __name__ == "__main__":
     _fine_timer(True)
     root = tk.Tk()
     app = App(root)
+    app._open_link()
     if "--ai-control" in sys.argv:
         app.toggle_ai_control()
     try:
