@@ -132,6 +132,19 @@ class AnalyzeTest(unittest.TestCase):
             self.assertLessEqual(f["share"], 1.0)
 
 
+class WithoutGpuTest(unittest.TestCase):
+    def test_gpu_and_pcie_readings_are_removed(self):
+        rows = [{"t": 0, "cpu_util": 50, "gpu_util": 99, "gpu_vram": 2.0, "pcie_rx": 900, "board_util": 70}]
+        self.assertEqual(analysis.without_gpu(rows), [{"t": 0, "cpu_util": 50}])
+
+    def test_another_programs_gpu_burst_no_longer_reads_as_gpu_starved(self):
+        # regression (acceptance test AT-3): a CPU-only test while another app used the GPU for a moment
+        rows = samples(200, cpu_util=99, cpu_core_max=100, cpu_cores=[100] * 20,
+                       gpu_util=lambda i: 45 if i < 6 else 8)
+        self.assertIn("gpu_starved", keys(analysis.analyze(rows)))
+        self.assertNotIn("gpu_starved", keys(analysis.analyze(analysis.without_gpu(rows))))
+
+
 class ReportTest(unittest.TestCase):
     def test_no_findings(self):
         self.assertEqual(analysis.report([]), ["Bottlenecks: none found - no single pattern held for 10% of the run."])

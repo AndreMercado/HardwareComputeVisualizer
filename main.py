@@ -107,6 +107,8 @@ TESTS = {
     "code": {"label": "Your program", "short": "YOUR CODE", "targets": {p: "usercode" for p in ORDER},
              "seconds": 600},
 }
+# workloads that use the GPU (YOUR CODE and the AI agent may): the others are judged without GPU readings
+GPU_SCRIPTS = {"gpu3d", "mlgpu", "pcie", "agent", "usercode"}
 OBSERVED = {"cpu2d": ("gpu", "ram"), "ram": ("cpu",), "gpu3d": ("cpu", "ram", "board"),
             "mlgpu": ("cpu", "ram", "board"), "mlcpu": ("ram",), "disk": ("cpu", "ram"),
             "pcie": ("ram", "cpu", "gpu"), "agent": tuple(ORDER), "usercode": tuple(ORDER)}
@@ -2092,6 +2094,12 @@ class App:
                 self.summary.tag_bind(tag, "<Leave>", lambda e: self.summary.config(cursor=""))
         self.summary.config(state="disabled")
 
+    def _findings(self):
+        """The bottleneck finder on this run. A test that doesn't use the GPU is judged without the GPU
+        readings: what other programs did on the GPU must not read as "GPU waiting on the CPU"."""
+        record = self.record if self.script in GPU_SCRIPTS else analysis.without_gpu(self.record)
+        return analysis.analyze(record, self.hw.get("threads"))
+
     def _show_summary(self, result, duration):
         lines = [f"Result: {result}   Test: {TESTS[self.test_key]['label']} on "
                  f"{PARTS[self.target]['label']}   Duration: {duration:.1f} s   Machine: {self._machine_name()}", ""]
@@ -2101,7 +2109,7 @@ class App:
                 lines.insert(2, f"Agent said: {self.ai_done_text}")
         if self.is_code:
             lines.insert(1, f"Program: {self.program}")
-        findings = analysis.analyze(self.record, self.hw.get("threads"))
+        findings = self._findings()
         prev = self._previous_run()  # looked up before this run is saved
         prev_avg = prev["averages"] if prev else {}
         head = f"{'Metric':<20}{'min':>11}{'avg':>11}{'peak':>11}  {'unit':<10}"

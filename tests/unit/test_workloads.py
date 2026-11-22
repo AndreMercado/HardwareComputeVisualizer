@@ -124,6 +124,8 @@ class UserCodeTest(unittest.TestCase):
         code, lines = run_workload("usercode", "5", os.path.join(self.folder, "missing.exe"))
         self.assertEqual(code, 2)
         self.assertIn("can't start", lines[-1]["error"])
+        # regression (acceptance test AT-7): the path showed with doubled backslashes (repr)
+        self.assertIn(os.path.join(self.folder, "missing.exe"), lines[-1]["error"])
 
 
 if __name__ == "__main__":

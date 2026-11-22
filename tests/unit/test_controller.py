@@ -378,6 +378,28 @@ class RecordedRunsTest(unittest.TestCase):
         self.assertIsNone(self.app()._previous_run())
 
 
+class FindingsTest(unittest.TestCase):
+    """_findings(): tests that don't use the GPU are judged without the GPU readings."""
+
+    def rows(self):
+        from _setup import samples
+        return samples(200, cpu_util=99, cpu_core_max=100, cpu_cores=[100] * 20,
+                       gpu_util=lambda i: 45 if i < 6 else 8)
+
+    def keys(self, script):
+        app = fake_app(script=script, record=self.rows(), hw={"threads": 20})
+        return [f["key"] for f in App._findings(app)]
+
+    def test_cpu_test_is_not_called_gpu_starved(self):  # regression: acceptance test AT-3
+        self.assertNotIn("gpu_starved", self.keys("cpu2d"))
+        self.assertNotIn("gpu_starved", self.keys("ram"))
+        self.assertIn("cpu_bound", self.keys("cpu2d"))
+
+    def test_gpu_tests_and_your_code_keep_the_gpu_readings(self):
+        for script in ("gpu3d", "mlgpu", "usercode"):
+            self.assertIn("gpu_starved", self.keys(script), script)
+
+
 class DialogsTest(unittest.TestCase):
     """While an AI or the editor drives the app, pop-ups go to the log instead of blocking."""
 

@@ -198,13 +198,15 @@ class Driver:
             done.set()
         self.root.after(20, self._pump)
 
-    def ui(self, fn, wait=True, timeout=60):
+    def ui(self, fn, wait=True, timeout=180):
         box, done = [], threading.Event()
+        t0 = time.monotonic()
         self.calls.put((fn, box, done))
         if not wait:
             return done
         if not done.wait(timeout):
-            raise TimeoutError("the window didn't answer")
+            raise TimeoutError(f"the window didn't answer in {timeout} s")
+        self.slowest = max(getattr(self, "slowest", 0.0), time.monotonic() - t0)  # reported per case
         if isinstance(box[0], Exception):
             raise box[0]
         return box[0]
@@ -216,7 +218,12 @@ class Driver:
     def shot(self, name):
         self.ui(lambda: self.root.update_idletasks())
         time.sleep(0.4)
-        return capture(self.hwnd(), name)
+        return self.capture_window(self.root, name)
+
+    def capture_window(self, win, name):
+        """PrintWindow on the Tk thread itself: called from another thread it stalls Tk's timers
+        (every capture froze the frame loop for ~3 s, which piled up into minutes)."""
+        return self.ui(lambda: capture(int(win.wm_frame(), 16), name))
 
     def status(self):
         return self.ui(lambda: self.app.status.cget("text"))
@@ -283,7 +290,13 @@ def step(at, title):
     return wrap
 
 
+DRIVER = None
+
+
 def record(at, title, **observed):
+    if DRIVER is not None:  # how long the window took to answer the slowest request in this case
+        observed["slowest_ui_reply_s"] = round(getattr(DRIVER, "slowest", 0.0), 2)
+        DRIVER.slowest = 0.0
     RESULTS.append({"at": at, "title": title, **observed})
     print(f"  {at}: {title} - " + ", ".join(f"{k}" for k in observed), flush=True)
 
@@ -418,8 +431,7 @@ def at11(d):
     d.ui(d.app.open_compare)
     time.sleep(1.5)
     top = d.ui(lambda: [w for w in d.root.winfo_children() if isinstance(w, tk.Toplevel)][-1])
-    hwnd = int(d.ui(lambda: top.wm_frame()), 16)
-    s1 = capture(hwnd, "AT-10a_compare_window")
+    s1 = d.capture_window(top, "AT-10a_compare_window")
     title = d.ui(lambda: top.title())
     d.ui(top.destroy)
     runs = sorted(glob.glob(os.path.join(DATA, "runs", "*-2d-cpu.json")))
@@ -518,7 +530,8 @@ def run():
     main._fine_timer(True)
     root = tk.Tk()
     app = main.App(root)
-    d = Driver(app, root)
+    global DRIVER
+    d = DRIVER = Driver(app, root)
     threading.Thread(target=scenario, args=(d, wanted), daemon=True).start()
     try:
         root.mainloop()
