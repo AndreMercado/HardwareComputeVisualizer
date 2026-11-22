@@ -367,7 +367,7 @@ Bottlenecks: none found - no single pattern held for 10% of the run.
 ### Hot spots in VS Code
 
 **Covers:** Ultimate goal (SRS VI.3)  
-**Preconditions:** VS Code with the HCV Hot Spots extension, open on `examples/demo_project`.
+**Preconditions:** VS Code with the HCV Hot Spots extension, open on `examples/demo_project`; its eye menu (right-click the yellow ▶) on Everything, the default - the speed boxes are hidden in the Memory-only views.
 
 **Steps**
 
@@ -378,7 +378,8 @@ Bottlenecks: none found - no single pattern held for 10% of the run.
 
 **Observed:** pass.
 
-- Profiler result: finished; top lines: `app\network.py:8` 50 %, `app\report.py:5` 12 %, `app\compute.py:12` 12 %, `app\compute.py:32` 5 %, `app\loader.py:7` 4 %; findings: serial
+- Profiler result: finished; top lines: `app\network.py:8` 52 %, `app\report.py:5` 12 %, `app\compute.py:24` 8 %, `app\compute.py:12` 6 %, `app\compute.py:32` 5 %; findings: serial
+- The window answered every request within 0.0 s
 
 **Screenshots**
 
