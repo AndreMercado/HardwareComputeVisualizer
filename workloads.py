@@ -440,12 +440,14 @@ def run_usercode(seconds, command):
         popen = dict(args=["sh", "-c", command], start_new_session=True)
     if want_cwd and os.path.isdir(want_cwd):
         cwd = want_cwd
-    env = dict(os.environ, PYTHONUNBUFFERED="1")
+    # read the output as UTF-8 and ask Python programs to write UTF-8: with the Windows default
+    # (cp1252) on one side only, "·" or "é" arrived as "Â·" / "Ã©"
+    env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8")
     try:
         proc = subprocess.Popen(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                text=True, errors="replace", bufsize=1, cwd=cwd, env=env, **popen)
+                                text=True, encoding="utf-8", errors="replace", bufsize=1, cwd=cwd, env=env, **popen)
     except OSError as e:
-        raise RuntimeError(f"can't start {command!r}: {e.strerror or e}")
+        raise RuntimeError(f"can't start {command}: {e.strerror or e}")  # not repr: Windows paths would show \\
 
     def kill():
         if proc.poll() is not None:

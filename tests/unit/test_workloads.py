@@ -93,6 +93,12 @@ class UserCodeTest(unittest.TestCase):
         _, lines = run_workload("usercode", "30", f'"{prog}"', env={"HCV_PYTHON": sys.executable})
         self.assertEqual(os.path.normcase(self.out(lines)[0]), os.path.normcase(sys.executable))
 
+    def test_non_ascii_output_arrives_intact(self):
+        # regression: found in acceptance test AT-9 - "·" showed as "Â·" in the log
+        prog = self.script("print('360000 orders \\u00b7 1.9 s \\u00e9')\n")
+        _, lines = run_workload("usercode", "30", f'"{prog}"')
+        self.assertIn("360000 orders \u00b7 1.9 s \u00e9", self.out(lines))
+
     def test_exit_code_is_reported(self):
         prog = self.script("import sys\nsys.exit(3)\n")
         _, lines = run_workload("usercode", "30", f'"{prog}"')
