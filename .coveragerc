@@ -1,0 +1,17 @@
+# Coverage of the unit tests:  python tests/unit/run.py --coverage
+[run]
+branch = True
+source = .
+# workloads.py, sandbox_run.py and the agent's code run as their own processes: measure those too
+patch = subprocess
+parallel = True
+omit =
+    tests/*
+    examples/*
+    vscode-extension/*
+    ai_workspace/*
+    runs/*
+
+[report]
+sort = Cover
+skip_empty = True

@@ -1,4 +1,4 @@
-"""Runs every test of the profiler and the VS Code extension. From the repo:
+"""Runs every test: the unit tests (tests/unit), the profiler and the VS Code extension. From the repo:
 
     python tests/run_all.py            everything except the desktop-app test
     python tests/run_all.py --quick    a few projects of each kind
@@ -27,7 +27,7 @@ def run(title, cmd, env=None):
     r = subprocess.run(cmd, cwd=HERE, env={**os.environ, "HCV_PYTHON": PY, **(env or {})},
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
     for line in r.stdout.splitlines():
-        if line.startswith(("PASS", "FAIL", "ALL PASS", "SOME FAILED")) or "EXCEPTION" in line:
+        if line.startswith(("PASS", "FAIL", "ALL PASS", "SOME FAILED", "Ran ", "OK", "ERROR:")) or "EXCEPTION" in line:
             print("  " + line[:220])
     ok = r.returncode == 0 and "SOME FAILED" not in r.stdout and "\nFAIL " not in "\n" + r.stdout
     print(f"  -> {'ok' if ok else 'FAILED'} ({time.time() - t:.0f} s)", flush=True)
@@ -103,6 +103,7 @@ def main():
     def build():
         subprocess.run([PY, os.path.join(HERE, "build_only.py")], check=True, stdout=subprocess.DEVNULL)
 
+    results["unit tests"] = run("unit tests (model + controller classes)", [PY, os.path.join("unit", "run.py")])
     build()
     results["profiler, built-in sampler"] = run("profiler, built-in sampler", [PY, "run_tests.py", "new", "builtin", *pick])
     if has_pyspy():
