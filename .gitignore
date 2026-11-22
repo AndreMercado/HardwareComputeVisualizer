@@ -6,3 +6,6 @@ control_token.txt
 .hcv/
 tests/work/
 recent_programs.json
+
+.coverage
+.coverage.*
