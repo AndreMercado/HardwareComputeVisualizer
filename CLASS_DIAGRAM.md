@@ -128,8 +128,6 @@ classDiagram
         -_ai_busy
         +local_hw
         +hw
-        +remote
-        -_connecting
         -_lhm_probed
         +options
         +selected
@@ -165,8 +163,6 @@ classDiagram
         +ai_banner
         +clock
         +target_lbl
-        +btn_remote
-        +btn_local
         +btn_ai
         +canvas
         +shapes
@@ -239,12 +235,6 @@ classDiagram
         -_find_test(name)
         -_ai_state()
         -_ai_do(action, args)
-        -_load_remote_cfg()
-        +ask_remote()
-        -_connect(target)
-        -_poll_connect()
-        +use_local()
-        -_on_remote_lost()
         -_draw_backdrop()
         -_trace_points(a, b)
         -_draw_trace(a, b)
@@ -411,94 +401,6 @@ classDiagram
         -_memory_check()
         +run(argv)
     }
-    class remote["remote.py"] {
-        <<module>>
-        +ssh_runner(host, user, key, port)
-        -_bundle()
-        -_ssh_error(stderr, host, port, key)
-    }
-    class RemoteError {
-    }
-    class RemoteProc {
-        +pid
-        +target
-        +q
-        +returncode
-        +__init__(target)
-        +stdout()
-        +poll()
-        -_finish(code)
-        +terminate(timeout)
-    }
-    class RemotePoller {
-        +t_watch
-        +__init__(target, gpu_index, disk)
-        +start()
-        +stop()
-        +sources()
-        +info()
-        +latest()
-    }
-    class RemoteTarget {
-        +label
-        +uses_ssh
-        +run
-        +dir
-        +agent
-        +alive
-        +hw
-        +proc
-        +lost_reason
-        -_hello
-        -_wlock
-        +latest
-        +info
-        +sources
-        +__init__(host, user, key, port, runner)
-        +connect()
-        +close()
-        -_remove_dir(wait)
-        +send(force, kwargs)
-        -_ping()
-        -_read()
-        +poller(gpu_index, disk)
-        +start(script, seconds, disk, command)
-    }
-    class remote_agent["remote_agent.py"] {
-        <<module>>
-        +send(kwargs)
-        +read(path, default)
-        +cpu_name()
-        +disk_of(path)
-        +mount_points()
-        +disks()
-        +hwmon_temp(want_names, want_labels)
-        +cpu_temp_path()
-        +board_temp_path()
-        +rapl_path()
-        +hardware()
-        +disk_folder(disk)
-        +start_workload(script, seconds, disk)
-        +stop_workload()
-        +unwatch()
-        +shutdown()
-        +watchdog()
-        +main()
-    }
-    class Sampler {
-        +disk
-        +stop_ev
-        +gpu
-        +last_cpu
-        +last_disk
-        +last_rapl
-        +last_cores
-        +sources
-        +__init__(gpu_index, disk)
-        +sample()
-        +run()
-        +stop()
-    }
     class sandbox_run["sandbox_run.py"] {
         <<module>>
         -_norm(p)
@@ -601,7 +503,6 @@ classDiagram
         +run_gpu3d(seconds)
         +run_disk(seconds, folder)
         -_disk_windows(seconds, folder)
-        -_disk_linux(seconds, folder)
         +run_pcie(seconds)
         +run_ml(seconds, device)
         +run_usercode(seconds, command)
@@ -609,8 +510,6 @@ classDiagram
     App ..> CompareWindow : uses
     App ..> ControlServer : uses
     App ..> Poller : uses
-    App ..> RemoteError : uses
-    App ..> RemoteTarget : uses
     App ..> Replay : uses
     App ..> SearchCombo : uses
     App ..> Tooltip : uses
@@ -619,16 +518,10 @@ classDiagram
     Poller ..> Pdh : uses
     Poller ..> _PdhGpu : uses
     Profiler ..> Gpu : uses
-    RemoteTarget ..> RemoteError : uses
-    RemoteTarget ..> RemotePoller : uses
-    RemoteTarget ..> RemoteProc : uses
-    Sampler ..> Gpu : uses
     main ..> agent : imports
     main ..> analysis : imports
     main ..> control : imports
-    main ..> remote : imports
     main ..> telemetry : imports
     mcp_server ..> control : imports
-    remote_agent ..> nvgpu : imports
     telemetry ..> nvgpu : imports
 ```

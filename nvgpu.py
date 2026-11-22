@@ -1,8 +1,7 @@
 """NVIDIA GPU and PCIe bus readings through NVML (read-only).
 
-Shared by telemetry.py (this PC) and remote_agent.py (a remote machine), so it
-uses only the standard library and pynvml (nvidia-ml-py, a single pure-Python
-file that is copied to the remote machine with the agent).
+Used by telemetry.py and the profiler; needs only the standard library and pynvml
+(nvidia-ml-py).
 """
 import threading
 import time

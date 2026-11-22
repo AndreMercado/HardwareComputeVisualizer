@@ -13,7 +13,7 @@ Windows-first: process trees are stopped with `taskkill`.
 There are three levels:
 
 1. **Unit tests** (`tests/unit/`, Python `unittest`): one class or function at a time, on the Model
-   and Controller classes. Hardware, Ollama and SSH are replaced by fakes where needed.
+   and Controller classes. Hardware and Ollama are replaced by fakes where needed.
 2. **Integration tests** (`run_tests.py`, `vis_test.py`): the profiler and YOUR CODE on 20 real
    test projects.
 3. **System tests** (`e2e.js`): the real VS Code extension, the profiler and (with `--app`) the
@@ -30,13 +30,12 @@ Acceptance tests (the SRS use cases, run by hand on the real app with screenshot
 | `test_telemetry.py` | `telemetry.Poller`, LHM parsing (Model) | LibreHardwareMonitor tree parsing (comma decimals, units, kinds), sensor choice, chipset sensor never guessed, RAPL energy-weighted watts, the live Poller's rate (≥ 15 samples/s) and value ranges |
 | `test_workloads.py` | `workloads` (Model) | deterministic 2D frame, every UI test has a runner, JSON output contract, error = one line + exit 2; YOUR CODE: folder, Python choice, exit code, heartbeat, time limit kills the child processes too, and the regression test for the Windows launch bug |
 | `test_agent.py` | `agent`, `sandbox_run` (Model) | path escape blocked, file tools, model choice, the agent loop with a scripted model (finish, nudges, step limit, time limit, blocked paths, tool errors); the sandbox blocks network, programs, and reads / writes / deletes / listings outside the working folder |
-| `test_remote.py` | `remote.RemoteTarget`, `RemoteProc`, `RemotePoller` (Model) | SSH options (key only), error messages, connect failures (no Python, old Python, odd folder), message dispatch, lost connection fails the run, stop confirmed vs forced, stale telemetry = unavailable |
 | `test_control.py` | `control.ControlServer` (Controller, external API) | token required, unknown actions, JSON body checks, requests reach the UI thread, `wait`, localhost only, the editor link's smaller action set |
 | `test_profiler.py` | `profiler` helpers (Model) | project folder detection, when to run as `python -m`, GPU readings removed for programs that never used the GPU |
 | `test_controller.py` | `main.App` (Controller) | START validation (every refusal of UC-13), launching the workload and poller, how a finished run is classified (UC-9, UC-7), thermal abort (UC-14), telemetry lost (UC-12), STOP and force-stop (UC-8, FR-10), agent event routing, saving runs and finding the previous one, pop-ups under AI control, replay timing |
 
 Coverage (statement + branch, `--coverage`): `analysis` 99 %, `agent` 84 %, `control` 82 %,
-`remote` 77 %, `telemetry` 49 % (the rest reads Windows / NVIDIA hardware), `main` 23 % (most of
+`telemetry` 49 % (the rest reads Windows / NVIDIA hardware), `workloads` 40 %, `main` 24 % (most of
 `main.py` draws the window; the controller methods above are covered). `sandbox_run.py` shows
 0 % because its audit hook also blocks coverage from saving its data; it is checked from outside
 by the 9 sandbox tests in `test_agent.py`.

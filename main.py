@@ -1,18 +1,16 @@
 """Hardware Compute Visualizer.
 
-Pick a machine (this PC, or a remote Linux machine over SSH), a part (RAM / CPU /
-GPU / board / disk) and a test, press Start: a real workload runs in its own
+Pick a part of this PC (RAM / CPU / GPU / board / disk) and a test, press Start: a real workload runs in its own
 process, sensors are polled read-only at 20 Hz, and the diagram + readout follow
 the real numbers. Every run is recorded to runs/ so it can be compared with the
-previous one, compared side by side with any other run (another machine, or the
-same program before and after a change) and replayed. YOUR CODE runs the user's
+previous one, compared side by side with any other run (for example the same
+program before and after a change) and replayed. YOUR CODE runs the user's
 own program and analysis.py points out where it wastes the hardware.
 AI CONTROL lets another program (an AI) drive the window through control.py
 while you watch. See SRS_HardwareComputeVisualizer.md.
 """
 import collections
 import datetime
-import getpass
 import json
 import os
 import queue
@@ -31,7 +29,6 @@ import psutil
 import agent
 import analysis
 import control
-import remote
 import telemetry
 
 BG = "#070707"      # near-black base
@@ -105,7 +102,7 @@ TESTS = {
     "bus": {"label": "PCIe bus workload", "short": "PCIe", "targets": {"board": "pcie"}},
     # the agent may touch any part, so every part is involved; SRS default limit is 10 min
     "ai": {"label": "AI benchmark", "short": "AI BENCHMARK", "targets": {p: "agent" for p in ORDER},
-           "seconds": 600, "local_only": True},
+           "seconds": 600},
     # the user's own program (SRS ultimate goal): runs until it exits, at most 10 min
     "code": {"label": "Your program", "short": "YOUR CODE", "targets": {p: "usercode" for p in ORDER},
              "seconds": 600},
@@ -117,10 +114,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = control.DATA_DIR  # this folder, or the user's HCV folder when the app runs from the VS Code extension
 AI_DIR = os.path.join(DATA, "ai_workspace")
 RUNS_DIR = os.path.join(DATA, "runs")  # one JSON file per finished run (record / compare / replay)
-REMOTE_FILE = os.path.join(DATA, "remote_target.json")  # last remote host/user/port/key *path* - no secrets
 
 # key, label, unit, part (or "wl" = measured by the workload), default source
-# (the poller names a different source where it has one: remote machine, AMD/Intel GPU...)
+# (the poller names a different source where it has one: AMD/Intel GPU...)
 WL_SRC = "workload-measured"
 STATS = [
     ("cpu_util", "CPU utilization", "%", "cpu", "psutil"),
@@ -415,9 +411,7 @@ class App:
         self._ai_busy = False
         messagebox.app = self
         self.local_hw = telemetry.detect_hardware()
-        self.hw = self.local_hw  # the target machine's hardware (this PC, or the remote one)
-        self.remote = None       # remote.RemoteTarget while a remote machine is the target (UC-2)
-        self._connecting = None  # (target, result) while a connection is being made
+        self.hw = self.local_hw  # this PC's hardware
         self._lhm_probed = time.monotonic()  # detect_hardware() just looked for LibreHardwareMonitor
         self.options = self._options_for(self.hw)
         self.selected = None
@@ -466,22 +460,18 @@ class App:
         self.clock.pack(side="right")
         tk.Frame(outer, bg=ACCENT, height=2).pack(fill="x", pady=(0, 8))
 
-        # --- target machine (UC-2): this PC or a remote machine over SSH ---
+        # --- the machine being measured: this PC ---
         trow = tk.Frame(outer, bg=BG)
         trow.pack(fill="x", pady=(0, 8))
-        tk.Label(trow, text="TARGET", bg=BG, fg=MUTED, font=(FONT, 10, "bold")).pack(side="left", padx=(0, 8))
+        tk.Label(trow, text="MACHINE", bg=BG, fg=MUTED, font=(FONT, 10, "bold")).pack(side="left", padx=(0, 8))
         self.target_lbl = tk.Label(trow, text="", bg=BG, fg=FG, font=(FONT, 11, "bold"))
         self.target_lbl.pack(side="left")
         btn = dict(bg=BG, fg=FG, activebackground=LINE, activeforeground=ACCENT, relief="flat",
                    highlightthickness=1, highlightbackground=LINE, font=(FONT, 10, "bold"),
                    disabledforeground="#3a3a3a", padx=10)
-        self.btn_remote = tk.Button(trow, text="REMOTE MACHINE…", command=self.ask_remote, **btn)
-        self.btn_remote.pack(side="right", padx=(6, 0))
-        self.btn_local = tk.Button(trow, text="THIS PC", command=self.use_local, **btn)
-        self.btn_local.pack(side="right")
         self.btn_ai = tk.Button(trow, text="AI CONTROL: OFF", command=self.toggle_ai_control, **btn)
         self.btn_ai.config(fg=AI_COLOR, highlightbackground=AI_COLOR, activeforeground=AI_COLOR)
-        self.btn_ai.pack(side="right", padx=(0, 18))
+        self.btn_ai.pack(side="right")
 
         self.canvas = tk.Canvas(outer, width=CANVAS_W, height=CANVAS_H, bg=BG, highlightthickness=0)
         self.canvas.pack(pady=(0, 6))
@@ -676,7 +666,7 @@ class App:
 
     @staticmethod
     def _options_for(hw):
-        """Search options per part from a detect_hardware() / remote agent report."""
+        """Search options per part from a detect_hardware() report."""
         return {
             "ram": [hw["ram"]] if hw.get("ram") else [],
             "cpu": [hw["cpu"]] if hw.get("cpu") else [],
@@ -693,17 +683,10 @@ class App:
             self.combos[key] = c
 
     def _machine_name(self):
-        name = self.hw.get("machine") or "?"
-        return f"{name} ({self.remote.label})" if self.remote else name
+        return self.hw.get("machine") or "?"
 
     def _show_target(self):
-        if self.remote:
-            self.target_lbl.config(text=f"REMOTE  {self._machine_name()}", fg=ACCENT)
-        else:
-            self.target_lbl.config(text=f"THIS PC  {self._machine_name()}", fg=FG)
-        busy = self.running or self._connecting is not None
-        self.btn_local.config(state="normal" if self.remote and not busy else "disabled")
-        self.btn_remote.config(state="disabled" if busy else "normal")
+        self.target_lbl.config(text=f"THIS PC  {self._machine_name()}", fg=FG)
 
     def _apply_hardware(self):
         """The target machine changed: rebuild the part list, search boxes and diagram."""
@@ -812,7 +795,7 @@ class App:
             messagebox.showerror("AI control", f"Can't open 127.0.0.1:{control.PORT}: {e}")
             return
         self.btn_ai.config(text="AI CONTROL: ON", bg=AI_COLOR, fg="black")
-        self.ai_banner.config(text=f"🤖 AI CONTROL ON")
+        self.ai_banner.config(text="🤖 AI CONTROL ON")
         self._log(f"🤖 AI control is on: 127.0.0.1:{control.PORT}, token in control_token.txt. "
                   "Everything the AI does shows here in purple.", "ai")
 
@@ -889,10 +872,6 @@ class App:
             return f"replay {args.get('run', '')}", self.btn_replay
         if action == "compare":
             return "open COMPARE", self.btn_compare
-        if action == "remote":
-            return f"connect to {args.get('user', '')}@{args.get('host', '')}", self.btn_remote
-        if action == "local":
-            return "switch to THIS PC", self.btn_local
         return action, None
 
     @staticmethod
@@ -910,14 +889,13 @@ class App:
             if text not in ("—", ""):
                 readings[label] = text
         return {
-            "target": self.remote.label if self.remote else "this PC", "machine": self.hw.get("machine"),
+            "machine": self.hw.get("machine"),
             "parts": self.options, "selected": {"part": self.selected, "name": self.selected_value},
             "test": self.test_var.get(), "tests": {k: t["label"] for k, t in TESTS.items()},
             "ai_task": self.goal_ids.get(self.goal_var.get()), "ai_tasks": {v: k for k, v in self.goal_ids.items()},
             "program": self.program_var.get(), "running": self.running, "replay": bool(self.replay),
             "elapsed_s": round(time.monotonic() - self.t_start, 1) if self.running else None,
             "status": self.status.cget("text"), "readings": readings,
-            "connecting": self._connecting is not None,
         }
 
     def _ai_do(self, action, args):
@@ -1009,154 +987,7 @@ class App:
         if action == "compare":
             CompareWindow(self.root, args.get("a"), args.get("b"))
             return ok(opened=True)
-        if action == "remote":
-            host, user, key = (str(args.get(k) or "").strip() for k in ("host", "user", "key"))
-            if not host or not user or not key:
-                return bad("host, user and key (path to an SSH private key) are needed")
-            if self._connecting:
-                return bad("already connecting")
-            self._connect(remote.RemoteTarget(host, user, key, int(args.get("port") or 22)))
-            return ok(connecting=True, note="poll /state until connecting is false")
-        if action == "local":
-            self.use_local()
-            return ok(target="this PC")
         return bad("unknown action")
-
-    # ------------------------------------------------------------ remote target (UC-2)
-    def _load_remote_cfg(self):
-        try:
-            with open(REMOTE_FILE, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            return cfg if isinstance(cfg, dict) else {}
-        except (OSError, ValueError):
-            return {}
-
-    def ask_remote(self):
-        if self.running or self._connecting:
-            return
-        cfg = self._load_remote_cfg()
-        dlg = tk.Toplevel(self.root)
-        dlg.title("Remote machine")
-        dlg.configure(bg=BG)
-        dlg.transient(self.root)
-        dlg.resizable(False, False)
-        tk.Label(dlg, text="CONNECT TO A REMOTE MACHINE", bg=BG, fg=ACCENT, font=(FONT, 13, "bold")).grid(
-            row=0, column=0, columnspan=3, sticky="w", padx=16, pady=(14, 2))
-        tk.Label(dlg, text="Linux with Python 3.8+ and SSH key login (for example a rented cloud GPU machine).\n"
-                           "Key login only: no password is asked for or stored. Tests and the AI benchmark's\n"
-                           "model stay yours to start and pay for; this app never creates or stops machines.",
-                 bg=BG, fg=MUTED, font=(FONT, 9), justify="left").grid(row=1, column=0, columnspan=3, sticky="w",
-                                                                      padx=16, pady=(0, 10))
-        default_key = os.path.join(os.path.expanduser("~"), ".ssh", "id_ed25519")
-        fields = {}
-        for r, (key, label, value) in enumerate((
-                ("host", "HOST", cfg.get("host", "")),
-                ("user", "USER", cfg.get("user", getpass.getuser())),
-                ("port", "PORT", str(cfg.get("port", 22))),
-                ("key", "KEY FILE", cfg.get("key", default_key if os.path.isfile(default_key) else ""))), start=2):
-            tk.Label(dlg, text=label, bg=BG, fg=FG, font=(FONT, 10, "bold")).grid(row=r, column=0, sticky="w",
-                                                                                 padx=(16, 8), pady=3)
-            var = tk.StringVar(value=value)
-            tk.Entry(dlg, textvariable=var, width=44, bg=PANEL, fg=FG, insertbackground=FG, relief="flat",
-                     font=(FONT, 10), highlightthickness=1, highlightbackground=LINE,
-                     highlightcolor=ACCENT).grid(row=r, column=1, sticky="we", pady=3, ipady=3)
-            fields[key] = var
-        tk.Button(dlg, text="…", width=3, bg=PANEL, fg=FG, relief="flat",
-                  command=lambda: fields["key"].set(filedialog.askopenfilename(
-                      parent=dlg, title="SSH private key", initialdir=os.path.dirname(default_key))
-                      or fields["key"].get())).grid(row=5, column=2, padx=(4, 16))
-        err = tk.Label(dlg, text="", bg=BG, fg="#f87171", font=(FONT, 9))
-        err.grid(row=6, column=0, columnspan=3, sticky="w", padx=16)
-
-        def go(event=None):
-            host, user = fields["host"].get().strip(), fields["user"].get().strip()
-            key = fields["key"].get().strip()
-            try:
-                port = int(fields["port"].get().strip() or 22)
-            except ValueError:
-                port = 0
-            if not host or not user or not 0 < port < 65536 or not key:
-                err.config(text="Host, user, a port number and a key file are all needed.")
-                return
-            try:
-                with open(REMOTE_FILE, "w", encoding="utf-8") as f:
-                    json.dump({"host": host, "user": user, "port": port, "key": key}, f)
-            except OSError:
-                pass
-            dlg.destroy()
-            self._connect(remote.RemoteTarget(host, user, key, port))
-
-        bar = tk.Frame(dlg, bg=BG)
-        bar.grid(row=7, column=0, columnspan=3, sticky="e", padx=16, pady=(8, 14))
-        tk.Button(bar, text="CONNECT", width=10, command=go, bg=ACCENT, fg="black", relief="flat",
-                  font=(FONT, 11, "bold")).pack(side="left", padx=4)
-        tk.Button(bar, text="CANCEL", width=10, command=dlg.destroy, bg=BG, fg=FG, relief="flat",
-                  highlightthickness=1, highlightbackground=LINE, font=(FONT, 11, "bold")).pack(side="left")
-        dlg.bind("<Return>", go)
-        dlg.bind("<Escape>", lambda e: dlg.destroy())
-        dlg.grab_set()
-
-    def _connect(self, target):
-        """Connect on a thread (it can take seconds); _poll_connect finishes on the UI thread."""
-        self._connecting = (target, None)
-        self._show_target()
-        self._set_status(f"Connecting to {target.host} over SSH…", ACCENT)
-
-        def work():
-            try:
-                result = target.connect()
-            except remote.RemoteError as e:
-                result = e
-            except Exception as e:  # never leave the UI waiting
-                result = remote.RemoteError(f"{type(e).__name__}: {e}")
-            self._connecting = (target, result)
-        threading.Thread(target=work, daemon=True).start()
-        self.root.after(100, self._poll_connect)
-
-    def _poll_connect(self):
-        target, result = self._connecting
-        if result is None:
-            self.root.after(100, self._poll_connect)
-            return
-        self._connecting = None
-        if isinstance(result, Exception):  # UC-2 alt a/b: stay on this PC
-            self._show_target()
-            self._set_status(f"Not connected: {result}", "#f87171")
-            messagebox.showerror("Can't connect", str(result))
-            return
-        if not result.get("nvml") and not messagebox.askokcancel(
-                "No NVIDIA driver",
-                f"{target.host} has no working NVIDIA driver ({result.get('nvml_error') or 'NVML not found'}). "
-                "GPU and board readings will be unavailable there. Stay connected?"):
-            target.close()
-            self._show_target()
-            self._set_status("Not connected: stayed on this PC.")
-            return
-        if self.remote:
-            self.remote.close()
-        self.remote, self.hw = target, result
-        self._apply_hardware()
-        self._set_status(f"Connected: {target.host}", ACCENT)
-
-    def use_local(self):
-        """UC-2 alt d: back to this PC - stop any remote test, stop and remove the agent."""
-        if not self.remote:
-            return
-        if self.running:
-            self.stop_test("stopped: switched to this PC")
-        self.remote.close()
-        self.remote, self.hw = None, self.local_hw
-        self._apply_hardware()
-        self._set_status("Target: this PC. The remote agent was stopped and removed.")
-
-    def _on_remote_lost(self):
-        reason = self.remote.lost_reason or f"Connection to {self.remote.host} lost."
-        self.remote.close()
-        self.remote, self.hw = None, self.local_hw
-        self._apply_hardware()
-        self._set_status(f"{reason} Back on this PC (the agent there stops its test by itself within 10 s).",
-                         "#f87171")
-        messagebox.showwarning("Remote machine lost", f"{reason}\n\nThe target is this PC again.")
 
     # ------------------------------------------------------------ diagram
     def _draw_backdrop(self):
@@ -1298,10 +1129,6 @@ class App:
             self._fail(f"The {test['label']} can't target {PARTS[self.selected]['label']}. "
                        f"It works on: {ok}.")
             return
-        if test.get("local_only") and self.remote:
-            self._fail(f"The {test['label']} runs on this PC only (its AI model is the local Ollama). "
-                       "Switch the target to THIS PC.")
-            return
         gpus = self.hw.get("gpu_info") or []
         gpu_sel = self.gpu_index if gpus else None
         if self.selected == "board":
@@ -1318,13 +1145,12 @@ class App:
                        "Pick an NVIDIA GPU, or run the ML test on the CPU.")
             return
         # UC-14 alt a: warn before the test when the target's temperature can't be read
-        if self.selected == "cpu" and not self.hw.get("cpu_temp") and not self.remote \
+        if self.selected == "cpu" and not self.hw.get("cpu_temp") \
                 and time.monotonic() - self._lhm_probed > 30:
             self._lhm_probed = time.monotonic()  # LibreHardwareMonitor may have been started after the app
             self.hw["cpu_temp"] = telemetry.probe_lhm() is not None
         if self.selected == "cpu" and not self.hw.get("cpu_temp"):
-            why = ("the machine doesn't expose a CPU sensor - usual on cloud VMs" if self.remote else
-                   "on Windows it needs LibreHardwareMonitor running as administrator")
+            why = "on Windows it needs LibreHardwareMonitor running as administrator"
             if not messagebox.askokcancel(
                     "No CPU temperature",
                     f"CPU temperature isn't readable ({why}), so there is no thermal safety abort "
@@ -1340,8 +1166,7 @@ class App:
         is_ai, is_code = script == "agent", script == "usercode"
         command = self.program_var.get().strip() if is_code else None
         if is_code and not command:
-            self._fail("Type the command that starts your program in PROGRAM (or pick a file with …)."
-                       + (" On a remote machine it runs in your home folder there." if self.remote else ""))
+            self._fail("Type the command that starts your program in PROGRAM (or pick a file with …).")
             return
         cmd = None
         if is_ai:
@@ -1364,7 +1189,7 @@ class App:
             self.duration = test.get("seconds", TEST_SECONDS)
             cmd = [os.path.join(HERE, "agent.py"), workdir, model,
                    self.goal_ids[self.goal_var.get()], str(self.duration)]
-        elif not self.remote:
+        else:
             self.duration = test.get("seconds", TEST_SECONDS)
             cmd = [os.path.join(HERE, "workloads.py"), script, str(self.duration)]
             if script == "disk":
@@ -1403,41 +1228,31 @@ class App:
             self._log(f"Working folder: {workdir}", "info")
         elif is_code:
             self._log("", None, clear=True)
-            where = f" on {self.remote.host} (in your home folder)" if self.remote else ""
-            self._log(f"Running{where}: {command}", "info")
-            if not self.remote:
-                py, folder, note = self._code_plan(command)
-                self._log(f"  {note}", "info")
+            self._log(f"Running: {command}", "info")
+            py, folder, note = self._code_plan(command)
+            self._log(f"  {note}", "info")
         self.sample_times.clear()
 
         disks = self.hw.get("disks") or []
         disk = disks[self.disk_index] if disks else None
         try:
-            if self.remote:
-                self.duration = test.get("seconds", TEST_SECONDS)
-                self.proc = self.remote.start(script, self.duration, disk=disk["id"] if disk else None,
-                                              command=command)
-            else:
-                env = None
-                if gpu and gpu["kind"] == "nvml" and not (is_ai or is_code):  # the GPU being watched
-                    env = dict(os.environ, CUDA_DEVICE_ORDER="PCI_BUS_ID", CUDA_VISIBLE_DEVICES=str(gpu["index"]))
-                if is_code:
-                    py, folder, _ = self._code_plan(command)
-                    env = dict(os.environ, HCV_PYTHON=py or "", HCV_CWD=folder or "")
-                self.proc = subprocess.Popen(
-                    [sys.executable] + cmd, env=env,
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
+            env = None
+            if gpu and gpu["kind"] == "nvml" and not (is_ai or is_code):  # the GPU being watched
+                env = dict(os.environ, CUDA_DEVICE_ORDER="PCI_BUS_ID", CUDA_VISIBLE_DEVICES=str(gpu["index"]))
+            if is_code:
+                py, folder, _ = self._code_plan(command)
+                env = dict(os.environ, HCV_PYTHON=py or "", HCV_CWD=folder or "")
+            self.proc = subprocess.Popen(
+                [sys.executable] + cmd, env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
         except OSError as e:
             self._fail(f"Workload failed to launch: {e}")
             return
         threading.Thread(target=self._read_proc, args=(self.proc,), daemon=True).start()
 
-        if self.remote:
-            self.poller = self.remote.poller(gpu["index"] if gpu else None, disk["id"] if disk else None)
-        else:
-            self.poller = telemetry.Poller(gpu, disk)
+        self.poller = telemetry.Poller(gpu, disk)
         self.poller.start()
         self.running = True
         self.t_start = time.monotonic()
@@ -1521,7 +1336,7 @@ class App:
         """YOUR CODE that ran the line profiler (VS Code: Profile in the Hardware Visualizer): this
         recording and its bottlenecks go into the profile too, so the editor shows them per line."""
         import profiler
-        out = profiler.profile_of_command(self.program) if self.test_key == "code" and not self.remote else None
+        out = profiler.profile_of_command(self.program) if self.test_key == "code" else None
         if not out or not os.path.isfile(out):
             return
         try:
@@ -1574,9 +1389,9 @@ class App:
             self.hintrow.pack(side="left")
         self.goal_menu.config(state="disabled" if running else "normal")
         self.program_entry.config(state="disabled" if running else "normal")
-        self.btn_browse.config(state="disabled" if running or self.remote else "normal")
+        self.btn_browse.config(state="disabled" if running else "normal")
         for w in (self.folder_entry, self.btn_folder, self.btn_recent):
-            w.config(state="disabled" if running or self.remote else "normal")
+            w.config(state="disabled" if running else "normal")
         self.plan_label.pack_forget()
         if test == "code":
             self.plan_label.pack(side="left")
@@ -1649,8 +1464,6 @@ class App:
         p = self.proc
         if p is None:
             return False
-        if isinstance(p, remote.RemoteProc):
-            return p.terminate()
         try:
             parent = psutil.Process(p.pid)
             procs = parent.children(recursive=True) + [parent]
@@ -1710,8 +1523,6 @@ class App:
             self.link.close()
             self.link = None
         self.stop_test("closed", summary=False)
-        if self.remote:
-            self.remote.close()
         self.root.destroy()
 
     # ------------------------------------------------------------ per-frame loop
@@ -1730,8 +1541,6 @@ class App:
             self._idle_sync()
             if self.running:
                 self._tick_running(now)
-            elif self.remote and not self.remote.alive:
-                self._on_remote_lost()
             elif self.idle:
                 self._tick_idle(now)
             self._animate(dt)
@@ -1795,12 +1604,11 @@ class App:
                 self.stop_test("completed")
             return
 
-        where = f" on {self.remote.host}" if self.remote else ""
         if self.is_code:
-            self._set_status(f"Running your program{where} — {elapsed:.0f} s (stops at {self.duration:.0f} s)")
+            self._set_status(f"Running your program — {elapsed:.0f} s (stops at {self.duration:.0f} s)")
         else:
             self._set_status(f"Running {TESTS[self.test_key]['label']} on "
-                             f"{PARTS[self.target]['label']}{where} — {elapsed:.0f}/{self.duration:.0f} s")
+                             f"{PARTS[self.target]['label']} — {elapsed:.0f}/{self.duration:.0f} s")
 
         s = self.poller.latest
         if not s or s["t"] == self.last_t:
@@ -1848,13 +1656,11 @@ class App:
         """Where a metric comes from on the current target (the poller may name another source)."""
         p = self.poller if self.running else self.idle
         src = (getattr(p, "sources", None) or {}).get(key, default)
-        if key in ("cpu_temp", "board_temp") and not self.remote and telemetry.LHM and src == default:
+        if key in ("cpu_temp", "board_temp") and telemetry.LHM and src == default:
             src = "LibreHardwareMonitor"
         link = (getattr(p, "info", None) or {}).get("pcie_link")
         if key == "board_util" and link and src == default:
             src = f"{src} · {link}"
-        elif self.remote and src in ("psutil", "Windows perf counter"):
-            src = "remote agent"
         return src
 
     def _update_readout(self, m, wl_fresh):
@@ -2013,7 +1819,7 @@ class App:
     # ------------------------------------------------------------ readout / summary
     def _clear_readout(self):
         for key, _, _, _, src in STATS:
-            if key in ("cpu_temp", "board_temp") and not self.remote and telemetry.LHM:
+            if key in ("cpu_temp", "board_temp") and telemetry.LHM:
                 src = "LibreHardwareMonitor"  # running: the readings come from it during a test
             self.stat_val[key].config(text="—", fg=MUTED)
             self._set_src(key, src, MUTED)
@@ -2022,7 +1828,7 @@ class App:
     def _idle_sync(self):
         """Keeps a slow poller running while no test runs on this PC, so the readings and the
         diagram are live; remade when the chosen GPU / disk changes or LHM appears."""
-        want = not self.running and not self.remote
+        want = not self.running
         key = (self.gpu_index, self.disk_index, telemetry.LHM)
         if self.idle and (not want or key != self.idle_key):
             self.idle.stop()
@@ -2083,8 +1889,6 @@ class App:
         gpus = self.hw.get("gpu_info") or []
         has_nv = any(g.get("kind") == "nvml" for g in gpus)
         names = " ".join(str(g.get("name", "")) for g in gpus).lower()
-        if self.remote:
-            return ("not exposed by the remote machine", None)
         if key in ("cpu_temp", "board_temp"):
             if not telemetry.LHM:
                 return ("needs LibreHardwareMonitor · SET UP ›", "lhm")
@@ -2150,8 +1954,6 @@ class App:
     # ------------------------------------------------------------ steps and which tests fit
     def _test_fits(self, key):
         t = TESTS[key]
-        if t.get("local_only") and self.remote:
-            return False
         return self.selected is None or self.selected in t["targets"]
 
     def _test_tip(self, key):
@@ -2165,9 +1967,7 @@ class App:
                 "ai": "A local AI model (Ollama) decides what code to run, in a sandbox.",
                 "code": "Your own program: pick the file that starts it."}.get(key, "")
         tip = f"{t['label']}: {what}\nWorks on: {parts}."
-        if t.get("local_only") and self.remote:
-            tip += "\nThis PC only - switch the target to THIS PC."
-        elif not self._test_fits(key):
+        if not self._test_fits(key):
             tip += f"\nNot for {PARTS[self.selected]['label']} - pick {parts.split(',')[0]} first."
         return tip
 

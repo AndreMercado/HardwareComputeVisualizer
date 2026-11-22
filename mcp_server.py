@@ -25,7 +25,7 @@ def _tool(name, desc, props=None, required=()):
 
 S = {"type": "string"}
 TOOLS = {
-    "get_state": (_tool("get_state", "What the app shows now: target machine, detected parts, selected part, "
+    "get_state": (_tool("get_state", "What the app shows now: the machine, detected parts, selected part, "
                                      "chosen test, whether a test is running, live readings and the status line."),
                   "GET", "state"),
     "select_part": (_tool("select_part", "Click a part in the diagram: ram, cpu, gpu, board or disk. Optional "
@@ -56,10 +56,6 @@ TOOLS = {
                      "POST", "compare"),
     "replay_run": (_tool("replay_run", "Replay a recorded run in the diagram.", {"run": S}, ["run"]),
                    "POST", "replay"),
-    "connect_remote": (_tool("connect_remote", "Make a remote Linux machine the target over SSH (key login).",
-                             {"host": S, "user": S, "key": S, "port": {"type": "integer"}},
-                             ["host", "user", "key"]), "POST", "remote"),
-    "use_this_pc": (_tool("use_this_pc", "Make this PC the target again."), "POST", "local"),
 }
 
 

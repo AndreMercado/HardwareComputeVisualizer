@@ -105,7 +105,7 @@ class EditorLinkTest(unittest.TestCase):
             code, body = call("hello")
             self.assertEqual(code, 200)
             self.assertEqual(body["version"], control.APP_VERSION)
-            for forbidden in ("remote", "replay", "compare", "ai_task"):
+            for forbidden in ("replay", "compare", "ai_task", "runs"):
                 self.assertEqual(call(forbidden)[0], 404, forbidden)
         finally:
             server.close()

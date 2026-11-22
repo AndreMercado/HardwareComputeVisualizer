@@ -8,7 +8,7 @@ and prints one JSON object per ~0.25 s on stdout with the numbers it measured
 itself (frame_ms, gflops, gbps, frames, io_mbps, sps, loss, pcie_gbps). On failure
 prints {"error": "..."} and exits non-zero. The UI kills the process tree to stop it.
 
-Runs on Windows (this PC) and on Linux (a remote machine, through remote_agent.py).
+Runs on Windows, on the PC the app runs on.
 """
 import json
 import multiprocessing as mp
@@ -158,13 +158,7 @@ def _gl_context():
         import moderngl
     except ImportError:
         raise RuntimeError("moderngl isn't installed on this machine (pip install moderngl)")
-    try:
-        return moderngl, moderngl.create_standalone_context(require=330)
-    except Exception:
-        if sys.platform == "win32":
-            raise
-        # a Linux machine with no desktop session: render through EGL instead of X11
-        return moderngl, moderngl.create_standalone_context(require=330, backend="egl")
+    return moderngl, moderngl.create_standalone_context(require=330)
 
 
 def run_gpu3d(seconds):
@@ -202,16 +196,12 @@ DISK_READS_PER_WRITE = 3  # mostly reads, to keep SSD wear low
 def run_disk(seconds, folder):
     """Sequential write then reads of a temp file in `folder`, bypassing the
     file cache so the drive itself does the work. The file can't outlive this
-    process: on Windows it is opened delete-on-close, on Linux it is unlinked
-    as soon as it is open."""
+    process: it is opened delete-on-close."""
     import shutil
 
     if shutil.disk_usage(folder).free < 2 * DISK_FILE:
         raise RuntimeError(f"not enough free space in {folder} (needs 2 GB)")
-    if sys.platform == "win32":
-        _disk_windows(seconds, folder)
-    else:
-        _disk_linux(seconds, folder)
+    _disk_windows(seconds, folder)
 
 
 def _disk_windows(seconds, folder):
@@ -265,44 +255,6 @@ def _disk_windows(seconds, folder):
         del buf
         mem.close()
         k32.CloseHandle(handle)  # deletes the file
-
-
-def _disk_linux(seconds, folder):
-    import mmap
-    import os
-
-    path = os.path.join(folder, f".hcv_disk_test_{os.getpid()}.tmp")
-    try:
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_DIRECT, 0o600)
-    except OSError as e:
-        raise OSError(f"can't create the test file in {folder}: {e.strerror}"
-                      + (" (this filesystem doesn't allow direct I/O)" if e.errno == 22 else ""))
-    os.unlink(path)  # nothing is left in the folder; the space is freed when fd closes
-    mem = mmap.mmap(-1, DISK_BLOCK)  # page-aligned, as O_DIRECT requires
-    mem[:] = os.urandom(DISK_BLOCK)
-    stop = time.monotonic() + seconds
-    moved, t_rep, phase = 0, time.monotonic(), 0
-    try:
-        while time.monotonic() < stop:
-            writing = phase % (DISK_READS_PER_WRITE + 1) == 0
-            for n in range(DISK_FILE // DISK_BLOCK):
-                off = n * DISK_BLOCK
-                done = os.pwrite(fd, mem, off) if writing else os.preadv(fd, [mem], off)
-                if done != DISK_BLOCK:
-                    raise OSError(f"disk {'write' if writing else 'read'} stopped short")
-                moved += DISK_BLOCK
-                now = time.monotonic()
-                if now - t_rep >= REPORT_EVERY:
-                    emit(io_mbps=moved / (now - t_rep) / 1e6)
-                    moved, t_rep = 0, now
-                if now >= stop:
-                    break
-            if writing:
-                os.fsync(fd)
-            phase += 1
-    finally:
-        mem.close()
-        os.close(fd)
 
 
 # ---------------------------------------------------------------- PCIe bus (motherboard)
@@ -419,25 +371,20 @@ def run_usercode(seconds, command):
     {"ev": "exit"} says how. It is stopped at the time limit."""
     import os
     import re
-    import signal
     import subprocess
     import threading
 
-    win = sys.platform == "win32"
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     cwd = os.path.expanduser("~")
     # the app works out the folder and the Python (the project's venv) and hands them over
     want_cwd = os.environ.get("HCV_CWD") or ""
     python = os.environ.get("HCV_PYTHON") or sys.executable
-    if win:
-        m = re.match(r'\s*(?:"([^"]+)"|(\S+))(.*)$', command)
-        path = (m.group(1) or m.group(2)) if m else ""
-        if os.path.isfile(path):
-            cwd = os.path.dirname(os.path.abspath(path))
-            if path.lower().endswith((".py", ".pyw")):
-                command = f'"{python}" -u "{path}"{m.group(3)}'
-        popen = dict(args=command, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    else:
-        popen = dict(args=["sh", "-c", command], start_new_session=True)
+    m = re.match(r'\s*(?:"([^"]+)"|(\S+))(.*)$', command)
+    path = (m.group(1) or m.group(2)) if m else ""
+    if os.path.isfile(path):
+        cwd = os.path.dirname(os.path.abspath(path))
+        if path.lower().endswith((".py", ".pyw")):
+            command = f'"{python}" -u "{path}"{m.group(3)}'
     if want_cwd and os.path.isdir(want_cwd):
         cwd = want_cwd
     # read the output as UTF-8 and ask Python programs to write UTF-8: with the Windows default
@@ -445,24 +392,15 @@ def run_usercode(seconds, command):
     env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8")
     try:
         proc = subprocess.Popen(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                text=True, encoding="utf-8", errors="replace", bufsize=1, cwd=cwd, env=env, **popen)
+                                text=True, encoding="utf-8", errors="replace", bufsize=1, cwd=cwd, env=env,
+                                creationflags=no_window, args=command)
     except OSError as e:
         raise RuntimeError(f"can't start {command}: {e.strerror or e}")  # not repr: Windows paths would show \\
 
     def kill():
-        if proc.poll() is not None:
-            return
-        if win:  # the program and everything it started
+        if proc.poll() is None:  # the program and everything it started
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        else:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except OSError:
-                pass
-
-    if not win:  # the remote agent stops a test with SIGTERM: take the program down too
-        signal.signal(signal.SIGTERM, lambda *a: (kill(), os._exit(0)))
+                           creationflags=no_window)
 
     def pump():
         for line in proc.stdout:

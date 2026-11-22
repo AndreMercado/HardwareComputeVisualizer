@@ -71,8 +71,9 @@ Result: the yellow ▶ (run in a terminal + profile + boxes), the eye menu (choo
 2. "yes" (fix the bug the test run found and push)
 3. "open it up the vs code so i can test it" / "i hit run and got terminal process"
 4. (pasted the final presentation assignment and its deliverables list) / "yes do all of it"
+5. "remove the linux box feature, don't need that, just focus on the machine the program runs"
 
-Result: running the full test suite before answering "is it done" showed one failing group; the cause was a regression in `e3b432f` (YOUR CODE started with `sh -c` on Windows when no folder was given), fixed in `348ec68` with a regression test. The "terminal process" message was the demo program's `ModuleNotFoundError: numpy` under a VS Code interpreter without numpy (not an app bug). Then, each on its own branch merged into `main`: unit tests for the Model and Controller classes (`tests/unit/`, 161 cases, coverage report), statecharts and the architecture / algorithms document with UML diagrams (`docs/`), the acceptance test run with screenshots (`tests/acceptance/`, `docs/ACCEPTANCE_TESTS.md`), and the presentation.
+Result: running the full test suite before answering "is it done" showed one failing group; the cause was a regression in `e3b432f` (YOUR CODE started with `sh -c` on Windows when no folder was given), fixed in `348ec68` with a regression test. The "terminal process" message was the demo program's `ModuleNotFoundError: numpy` under a VS Code interpreter without numpy (not an app bug). The remote-machine feature (UC-2, built in session 5) was removed on request: `remote.py` and `remote_agent.py` deleted, the app and the SRS (v1.1) narrowed to the PC the app runs on. Then, each on its own branch merged into `main`: unit tests for the Model and Controller classes (`tests/unit/`, 142 cases, coverage report), statecharts and the architecture / algorithms document with UML diagrams (`docs/`), the acceptance test run with screenshots (`tests/acceptance/`, `docs/ACCEPTANCE_TESTS.md`), and the presentation.
 
 ## Development process and the context given to the agent
 
@@ -94,7 +95,7 @@ The app was built with Claude Code, one goal per session. The steps each session
    tests (profiler on 20 projects), system tests (the real VS Code extension + profiler + app), and
    acceptance tests (the SRS use cases on the real app, with screenshots). See `tests/README.md` and
    `docs/ACCEPTANCE_TESTS.md`.
-5. **Version control:** feature branches (`unit-tests`, `design-docs`, `acceptance-tests`,
+5. **Version control:** feature branches (`unit-tests`, `design-docs`, `acceptance-tests`, `remove-remote`,
    `presentation`) merged into `main` with merge commits, pushed to GitHub.
 
 ## 2. AI Benchmark Mode prompts (`agent.py`)

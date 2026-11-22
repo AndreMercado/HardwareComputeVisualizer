@@ -4,8 +4,7 @@ Hardware Compute Visualizer (HCV): a Windows desktop app (Python 3.11+, Tkinter)
 workload on one part of a PC (CPU, GPU, RAM, motherboard PCIe link, disk), reads the hardware's
 sensors 20 times a second while it runs, and draws a live diagram of the PC that follows the real
 readings. It can also run the user's own program and say where that program wastes the hardware,
-let a local AI model work on a task, measure a remote Linux machine over SSH, and record, replay
-and compare runs. Requirements: `SRS_HardwareComputeVisualizer.md` (use cases UC-1 … UC-14,
+let a local AI model work on a task, and record, replay and compare runs. Requirements: `SRS_HardwareComputeVisualizer.md` (use cases UC-1 … UC-14,
 functional requirements FR-1 … FR-23, non-functional NFR-1 …).
 
 Contents:
@@ -41,9 +40,6 @@ flowchart LR
         VS["VS Code extension<br/>extension.js"]
         MCP["mcp_server.py<br/>(AI assistant)"]
     end
-    subgraph LINUX["Remote Linux machine"]
-        RA["remote_agent.py<br/>(sampler + workloads)"]
-    end
 
     APP -- "starts, kills tree" --> WL
     WL -- "JSON lines: gbps, frame_ms, ..." --> APP
@@ -53,8 +49,6 @@ flowchart LR
     AG <-- "HTTP chat + tools" --> OLL
     POLL -- "latest sample" --> APP
     POLL -- "temps, power" --> LHM
-    APP -- "SSH (key only):<br/>upload, start, ping" --> RA
-    RA -- "JSON lines: tel, wl, ended" --> APP
     VS -- "token + HTTP" --> CTL
     MCP -- "token + HTTP" --> CTL
     CTL -- "requests queue" --> APP
@@ -68,7 +62,6 @@ flowchart LR
 | `workloads.py <test>` | `App.start_test` | stdout JSON lines | a real workload (all cores, the GPU) must not slow the window; killable |
 | `agent.py` | `App.start_test` (AI test) | stdout JSON events | the model's 10-minute task runs apart from the UI |
 | `sandbox_run.py` | `agent.run_python`, per step | exit code, stdout, `BLOCKED:` lines | each piece of AI-written code is isolated and time-limited |
-| `remote_agent.py` (Linux) | `RemoteTarget.connect` over SSH | stdin / stdout JSON | measures the remote machine where it runs |
 | `ControlServer` threads | the app | HTTP on 127.0.0.1 → a queue the UI thread drains | AI CONTROL and the VS Code link without touching Tk from another thread |
 
 ---
@@ -77,12 +70,12 @@ flowchart LR
 
 | Layer | Classes / modules | Responsibility |
 |---|---|---|
-| **Model** (no UI code) | `telemetry.Poller`, `Pdh`, `_PdhGpu`, `_Lhm`; `nvgpu.Gpu`; `workloads`; `analysis`; `agent`, `sandbox_run`; `remote.RemoteTarget`, `RemoteProc`, `RemotePoller`; `main.Replay`; `profiler.Profiler`; recorded runs (`runs/*.json`) | detect the hardware, read sensors, run the workloads, record samples, find bottlenecks, run the AI agent, talk to the remote machine |
-| **Controller** | `main.App` event handlers: `start_test`, `stop_test`, `_tick_running`, `_check_thermal`, `_update_readout`'s UC-12 rule, `start_replay`, `_save_run`, `_previous_run`, `ask_remote`, `use_local`, `_ai_do`; `control.ControlServer` (the same actions for an AI or VS Code) | turn user (or AI) actions into model calls, apply the rules of the use cases (validation, time limits, thermal abort, telemetry lost), decide how a run ended |
+| **Model** (no UI code) | `telemetry.Poller`, `Pdh`, `_PdhGpu`, `_Lhm`; `nvgpu.Gpu`; `workloads`; `analysis`; `agent`, `sandbox_run`; `main.Replay`; `profiler.Profiler`; recorded runs (`runs/*.json`) | detect the hardware, read sensors, run the workloads, record samples, find bottlenecks, run the AI agent |
+| **Controller** | `main.App` event handlers: `start_test`, `stop_test`, `_tick_running`, `_check_thermal`, `_update_readout`'s UC-12 rule, `start_replay`, `_save_run`, `_previous_run`, `_ai_do`; `control.ControlServer` (the same actions for an AI or VS Code) | turn user (or AI) actions into model calls, apply the rules of the use cases (validation, time limits, thermal abort, telemetry lost), decide how a run ended |
 | **View** | `main.App` drawing: `_draw_part`, `_animate`, readout labels, summary, log; `SearchCombo`, `Tooltip`, `CompareWindow`; `_Dialogs` (pop-ups) | show the diagram, numbers, log and dialogs; 60 FPS animation |
 
 **Where the design is not pure MVC:** `App` holds both the Controller methods and the View
-(Tkinter's widgets and their callbacks live in one class, ~2,000 lines). The Model is fully separate:
+(Tkinter's widgets and their callbacks live in one class, ~1,800 lines). The Model is fully separate:
 no Model module imports `tkinter` or `main`, so every Model class can be run and tested on its own
 (`tests/unit/`). The Controller methods read their state from fields, not from widgets, which is
 why `tests/unit/test_controller.py` can test them on a stand-in object without opening a window.
@@ -105,14 +98,11 @@ classDiagram
             -running: bool
             -selected: str
             -poller: TelemetrySource
-            -proc: WorkloadProcess
-            -remote: RemoteTarget
+            -proc: Popen
             -record: list
             +start_test()
             +stop_test(result)
             +start_replay(path)
-            +ask_remote()
-            +use_local()
             +tick()
             -_tick_running(now)
             -_check_thermal(m)
@@ -159,9 +149,6 @@ classDiagram
         class Replay {
             +samples: list
         }
-        class RemotePoller {
-            +latest: dict
-        }
         class Pdh {
             +add(path)
             +collect()
@@ -173,22 +160,6 @@ classDiagram
         }
         class Lhm {
             +readings() list
-        }
-        class WorkloadProcess {
-            <<interface>>
-            +poll() int
-            +stdout
-        }
-        class RemoteProc {
-            +terminate(timeout) bool
-        }
-        class RemoteTarget {
-            +host: str
-            +alive: bool
-            +connect() dict
-            +start(script, seconds) RemoteProc
-            +poller(gpu, disk) RemotePoller
-            +close()
         }
         class analysis {
             <<module>>
@@ -215,36 +186,27 @@ classDiagram
 
     TelemetrySource <|.. Poller
     TelemetrySource <|.. Replay
-    TelemetrySource <|.. RemotePoller
-    WorkloadProcess <|.. RemoteProc
 
     App "1" --> "0..1" TelemetrySource : poller
-    App "1" --> "0..1" WorkloadProcess : proc
-    App "1" --> "0..1" RemoteTarget : remote
+    App "1" --> "0..1" workloads : proc (process)
     App "1" *-- "0..2" ControlServer : AI control, editor link
     App ..> Dialogs : pop-ups
     App ..> CompareWindow : opens
     App *-- "2" SearchCombo
     App ..> analysis : findings
-    App ..> workloads : runs as process
     App ..> agent : runs as process
     Poller *-- "0..1" Pdh
     Poller o-- "0..1" Gpu
     Poller --> "0..1" Lhm : shared
-    RemoteTarget *-- "0..1" RemoteProc
-    RemoteTarget ..> RemotePoller : creates
     Profiler ..> analysis : per-line findings
 ```
 
 Notes on the relationships:
-- **`TelemetrySource`** is the interface the controller programs against: `Poller` (this PC),
-  `RemotePoller` (a remote machine) and `Replay` (a recording) all offer `start()`, `stop()` and
-  `latest`. `_tick_running` and `_animate` don't know which one they have, so remote runs and
-  replays reuse all the drawing and recording code.
-- **`WorkloadProcess`**: `subprocess.Popen` (local) and `RemoteProc` offer the same `poll()` and
-  `stdout`, so ending, reading and classifying a run is the same code for both.
-- Python has no `interface` keyword: these two are implicit (duck typing). They are shown as
-  interfaces because that is the design.
+- **`TelemetrySource`** is the interface the controller programs against: `Poller` (live sensors)
+  and `Replay` (a recording) both offer `start()`, `stop()` and `latest`. `_tick_running` and
+  `_animate` don't know which one they have, so a replay reuses all the drawing code.
+- Python has no `interface` keyword: `TelemetrySource` is implicit (duck typing). It is shown as
+  an interface because that is the design.
 
 ---
 
@@ -252,18 +214,16 @@ Notes on the relationships:
 
 | Module | Lines | Layer | Purpose |
 |---|---|---|---|
-| `main.py` | 2,570 | View + Controller | the window (`App`), compare window, replay, run records |
+| `main.py` | 2,369 | View + Controller | the window (`App`), compare window, replay, run records |
 | `telemetry.py` | 600 | Model | hardware detection; sensor polling (psutil, Windows PDH counters, RAPL power, NVML, LibreHardwareMonitor) |
 | `nvgpu.py` | 110 | Model | NVIDIA GPU readings (NVML): load, VRAM, temperature, power, PCIe traffic |
-| `workloads.py` | 500 | Model | the real benchmark workloads, each run as its own process |
+| `workloads.py` | 438 | Model | the real benchmark workloads, each run as its own process |
 | `analysis.py` | 150 | Model | bottleneck finder (algorithm 6.1) |
 | `agent.py` | 250 | Model | AI Benchmark Mode agent loop (algorithm 6.4) |
 | `sandbox_run.py` | 110 | Model | restrictions for AI-written code (algorithm 6.5) |
-| `remote.py` | 310 | Model | SSH connection to a remote Linux machine |
-| `remote_agent.py` | 390 | Model (remote side) | sampler + workloads on the remote machine, 10 s watchdog |
 | `profiler.py` | 790 | Model | line profiler for the user's code, linked to hardware readings (algorithm 6.6) |
-| `control.py` | 190 | Controller (API) | local JSON API for AI CONTROL and the VS Code extension |
-| `mcp_server.py` | 140 | adapter | lets an AI assistant use the control API (Model Context Protocol) |
+| `control.py` | 189 | Controller (API) | local JSON API for AI CONTROL and the VS Code extension |
+| `mcp_server.py` | 133 | adapter | lets an AI assistant use the control API (Model Context Protocol) |
 | `gen_diagram.py` | 220 | tool | regenerates `CLASS_DIAGRAM.md` from the source (`ast`) |
 | `vscode-extension/extension.js` | - | separate client | "Hot Spots" in the editor: runs `profiler.py`, draws boxes on slow lines |
 
@@ -274,13 +234,13 @@ Notes on the relationships:
 | Principle | Where |
 |---|---|
 | **Separation of concerns / layering** | Model modules never import the UI; workloads, agent and profiler are separate programs with a JSON-lines contract |
-| **Program to an interface (polymorphism)** | `TelemetrySource` (Poller / RemotePoller / Replay) and `WorkloadProcess` (Popen / RemoteProc), section 3 |
+| **Program to an interface (polymorphism)** | `TelemetrySource` (Poller / Replay): the controller and the diagram don't know if data is live or recorded, section 3 |
 | **Open/closed, data-driven** | parts, tests and readouts are tables (`PARTS`, `TESTS`, `OBSERVED`, `STATS`, `analysis.PATTERNS`): adding a part or a test is a table entry, the diagram and menus lay themselves out (NFR-5) |
 | **Adapter** | `_Dialogs` replaces `tkinter.messagebox`: same calls, but under AI control a pop-up goes to the log so nobody has to click it |
 | **Single source of truth** | `CLASS_DIAGRAM.md` is generated from the code by a hook; README tables come from the same constants |
 | **Fail safe / truthful display** | a missing reading shows "unavailable", never 0 or a guess (FR-11); stale workload numbers expire after 1 s; replays are amber and never pass as live |
-| **Least privilege** | the app needs no admin; sensors are read-only; the AI's code runs in a sandbox; the control API is localhost-only with a per-session token; SSH is key-only with `BatchMode` |
-| **Robustness** | every workload in its own process, killed as a tree (terminate, then kill after 2 s); the frame loop catches every exception (FR-17); the remote agent stops itself 10 s after losing contact (FR-22) |
+| **Least privilege** | the app needs no admin; sensors are read-only; the AI's code runs in a sandbox; the control API is localhost-only with a per-session token; no network connections leave the PC |
+| **Robustness** | every workload in its own process, killed as a tree (terminate, then kill after 2 s); the frame loop catches every exception (FR-17) |
 
 ---
 
@@ -351,7 +311,7 @@ threshold boundary.
 A bounded loop: at most 30 steps, at most 4 replies in a row without a tool call, and the run's
 deadline. Each step sends the conversation to the local model with 5 tools; tool calls are
 executed and their results appended; `finish` ends it as **done**; anything else ends as
-**stopped** or **timeout** (statechart 3 in `docs/STATECHARTS.md`). The model is always unloaded
+**stopped** or **timeout** (statechart 2 in `docs/STATECHARTS.md`). The model is always unloaded
 at the end (`finally`). Paths given to file tools are resolved with `realpath` and must stay under
 the working folder (`safe_path`).
 
@@ -381,17 +341,6 @@ PyTorch needs it).
 - When `py-spy` is installed it gives the final, exact line times (it samples from outside the
   process, so it also sees long C calls, threads and child processes).
 
-### 6.7 Remote measurement protocol (`remote.py`, `remote_agent.py`)
-
-1. One SSH command checks `python3`, creates a private temp folder (`mkdtemp`, mode 700) and
-   unpacks the three agent files sent as JSON on stdin; the folder name must match
-   `^/…/hcv-agent-\w+$` before anything else touches it.
-2. A second SSH session runs `remote_agent.py`; it answers with a hardware report (`hello`).
-3. Messages are JSON lines both ways (`watch`, `start`, `stop`, `ping`, `quit` ↔ `tel`, `wl`,
-   `ended`, `sources`). The app pings every second; the agent stops its test and removes itself
-   after 10 s without contact (FR-22), so a dropped connection can't leave a workload running.
-4. Telemetry older than 2 s counts as lost, so the UC-12 rule ends the run truthfully.
-
 ---
 
 ## 7. Requirements → design → tests
@@ -399,17 +348,17 @@ PyTorch needs it).
 | Requirement (SRS) | Implemented in | Verified by |
 |---|---|---|
 | UC-1 detect hardware | `telemetry.detect_hardware` | acceptance test AT-1 |
-| UC-2 remote machine | `remote.RemoteTarget`, `App.ask_remote/_poll_connect/use_local/_on_remote_lost` | `test_remote.py`, AT-2 |
-| UC-3/4 select a part | `App._select`, `SearchCombo` | AT-3 |
-| UC-5/6 2D / 3D test | `workloads.run_cpu2d/run_ram/run_gpu3d`, `App.start_test` | `test_workloads.py`, `StartLaunchTest`, AT-4, AT-5 |
-| UC-7 AI benchmark | `agent.py`, `sandbox_run.py` | `test_agent.py`, AT-6 |
-| UC-8 stop | `App.stop_test`, `_kill_tree` | `StopTest`, AT-7 |
-| UC-9 test completes | `App._tick_running`, `_show_summary`, `_save_run` | `EndOfRunTest`, `RecordedRunsTest`, AT-4 |
-| UC-10/11 live diagram and stats | `App._animate`, `_update_readout`, `Poller` | `PollerLiveTest`, AT-4 |
-| UC-12 telemetry failure | `App._update_readout` | `SafetyTest`, `RemotePollerTest` |
-| UC-13 test fails to start | `App.start_test`, `_fail`, `_tick_running` | `StartValidationTest`, `EndOfRunTest`, AT-8 |
+| UC-2 remote machine | withdrawn in SRS v1.1 (feature removed) | - |
+| UC-3/4 select a part | `App._select`, `SearchCombo` | AT-2 |
+| UC-5/6 2D / 3D test | `workloads.run_cpu2d/run_ram/run_gpu3d`, `App.start_test` | `test_workloads.py`, `StartLaunchTest`, AT-3, AT-4 |
+| UC-7 AI benchmark | `agent.py`, `sandbox_run.py` | `test_agent.py`, AT-5 |
+| UC-8 stop | `App.stop_test`, `_kill_tree` | `StopTest`, AT-6 |
+| UC-9 test completes | `App._tick_running`, `_show_summary`, `_save_run` | `EndOfRunTest`, `RecordedRunsTest`, AT-3 |
+| UC-10/11 live diagram and stats | `App._animate`, `_update_readout`, `Poller` | `PollerLiveTest`, AT-3 |
+| UC-12 telemetry failure | `App._update_readout` | `SafetyTest` |
+| UC-13 test fails to start | `App.start_test`, `_fail`, `_tick_running` | `StartValidationTest`, `EndOfRunTest`, AT-7 |
 | UC-14 thermal abort | `App._check_thermal`, `start_test` warning | `SafetyTest`, `StartValidationTest` |
-| Ultimate goal: user's code + bottlenecks | `workloads.run_usercode`, `analysis`, `profiler`, extension | `test_workloads.py`, `test_analysis.py`, integration + system tests, AT-9, AT-10 |
-| Record / replay / compare (stretch) | `App._save_run`, `start_replay`, `CompareWindow` | `RecordedRunsTest`, AT-11 |
+| Ultimate goal: user's code + bottlenecks | `workloads.run_usercode`, `analysis`, `profiler`, extension | `test_workloads.py`, `test_analysis.py`, integration + system tests, AT-8, AT-9 |
+| Record / replay / compare (stretch) | `App._save_run`, `start_replay`, `CompareWindow` | `RecordedRunsTest`, AT-10 |
 
 AT-n = acceptance test case in `docs/ACCEPTANCE_TESTS.md`.

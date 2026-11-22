@@ -1,6 +1,6 @@
 # System statechart diagrams
 
-Four statecharts describe the behavior of the Hardware Compute Visualizer. Each one is taken
+Three statecharts describe the behavior of the Hardware Compute Visualizer. Each one is taken
 from the code, and every transition names the method or event that causes it. Rendered images
 are in `docs/img/` (`statechart_*.png`); the Mermaid source below is what they are drawn from
 (`python docs/render_diagrams.py`).
@@ -8,9 +8,8 @@ are in `docs/img/` (`statechart_*.png`); the Mermaid source below is what they a
 | # | Statechart | Object | Code |
 |---|---|---|---|
 | 1 | Test session | `main.App` (the controller) | `start_test`, `_tick_running`, `_check_thermal`, `_update_readout`, `stop_test`, `start_replay` |
-| 2 | Target machine (remote connection) | `main.App` + `remote.RemoteTarget` | `ask_remote`, `_connect`, `_poll_connect`, `use_local`, `_on_remote_lost`, `RemoteTarget.connect/_read/close` |
-| 3 | AI Benchmark agent | `agent.main` (its own process) | the step loop in `agent.py` |
-| 4 | Workload process: YOUR CODE runner | `workloads.run_usercode` (its own process) | `run_usercode`, `kill` |
+| 2 | AI Benchmark agent | `agent.main` (its own process) | the step loop in `agent.py` |
+| 3 | Workload process: YOUR CODE runner | `workloads.run_usercode` (its own process) | `run_usercode`, `kill` |
 
 ---
 
@@ -18,7 +17,7 @@ are in `docs/img/` (`statechart_*.png`); the Mermaid source below is what they a
 
 The app is always in exactly one of **Idle**, **Running a test** or **Replaying**. While a test
 runs, every frame (60 per second) runs `_tick_running`, which checks the exit conditions in the
-order shown. A test can end in seven different ways; each gives a result text in the summary and
+order shown. A test can end in several ways; each gives a result text in the summary and
 in the saved run.
 
 ```mermaid
@@ -55,7 +54,6 @@ stateDiagram-v2
     Running --> Stopping : process exited [poll() != None] / classify result (UC-9)
     Running --> Stopping : temp >= limit / "aborted" (UC-14)
     Running --> Stopping : target metrics lost 1 s (UC-12)
-    Running --> Stopping : THIS PC pressed during a remote test
 
     state Stopping {
         [*] --> KillTree
@@ -96,45 +94,7 @@ A REPLAY file that can't be read (no samples, unknown part) is refused with a `_
 
 ---
 
-## 2. Target machine (remote connection)
-
-The app measures either **this PC** or one **remote Linux machine** over SSH (UC-2). Connecting
-runs on a worker thread; the window keeps drawing (`_poll_connect` checks every 100 ms).
-
-```mermaid
-stateDiagram-v2
-    direction TB
-    [*] --> ThisPC
-
-    ThisPC --> Connecting : REMOTE MACHINE... dialog OK [ask_remote -> _connect]
-    state Connecting {
-        [*] --> Upload
-        Upload : ssh: check python3, unpack agent files into a private temp folder (45 s limit)
-        Upload --> StartAgent : HCV_DIR reported, Python >= 3.8, folder name valid
-        StartAgent : ssh: python3 remote_agent.py
-        StartAgent --> WaitHello
-        WaitHello : wait for the agent's hardware report (25 s)
-    }
-    Connecting --> ThisPC : RemoteError (no ssh.exe, key missing, login refused, no/old Python, timeout) / error dialog (UC-2 alt a, b)
-    WaitHello --> AskNoGpu : report has no NVIDIA driver
-    AskNoGpu : "No NVIDIA driver - Stay connected?"
-    AskNoGpu --> ThisPC : Cancel / close(): agent removed
-    AskNoGpu --> Remote : OK
-    WaitHello --> Remote : report OK / _apply_hardware()
-
-    state Remote {
-        [*] --> RemoteIdle
-        RemoteIdle --> RemoteTest : START [send cmd=start]
-        RemoteTest --> RemoteIdle : test ends [agent sends "ended"]
-        RemoteIdle : ping every 1 s, the agent stops itself after 10 s without one
-    }
-    Remote --> ThisPC : THIS PC pressed [use_local] / stop test, send quit, rm -rf agent folder (UC-2 alt d)
-    Remote --> ThisPC : SSH session ended [_read loop ends] / running test fails "connection lost", warning dialog (UC-2 alt c)
-```
-
----
-
-## 3. AI Benchmark agent (`agent.py`)
+## 2. AI Benchmark agent (`agent.py`)
 
 The agent runs in its own process. A local Ollama model decides each step; the program only
 enforces the limits (`MAX_STEPS = 30`, `MAX_NUDGES = 4`, the run's deadline) and the sandbox.
@@ -176,7 +136,7 @@ stateDiagram-v2
 
 ---
 
-## 4. YOUR CODE runner (`workloads.run_usercode`)
+## 3. YOUR CODE runner (`workloads.run_usercode`)
 
 ```mermaid
 stateDiagram-v2
@@ -193,9 +153,8 @@ stateDiagram-v2
     }
     ProgramRunning --> Exited : program ends / emit exit "program exited with code N"
     ProgramRunning --> KillTree : run_s >= limit
-    KillTree : taskkill /T /F (Windows) or killpg SIGKILL (Linux)
+    KillTree : taskkill /T /F (the program and its child processes)
     KillTree --> StoppedAtLimit : emit exit "stopped at the N s time limit"
-    ProgramRunning --> KillTree : SIGTERM from the remote agent (Linux)
 
     Exited --> [*]
     StoppedAtLimit --> [*]
@@ -211,6 +170,5 @@ The transitions above are exercised by the unit tests (`tests/unit/`):
 | Statechart | Transitions tested in |
 |---|---|
 | 1 Test session | `test_controller.py` - `StartValidationTest` (every Validating → Idle refusal, the Cancel on AskNoSensor), `StartLaunchTest` (Validating → Running), `EndOfRunTest` (every Running → Stopping exit and its result text), `SafetyTest` (thermal, telemetry lost, replay exempt), `StopTest` (KillTree / ForceKill / Summarize) |
-| 2 Target machine | `test_remote.py` - `ConnectTest` (Connecting → ThisPC errors), `MessageStreamTest` (hello, ended, SSH session ended), `RemoteProcTest`, `RemotePollerTest` |
-| 3 AI agent | `test_agent.py` - `AgentLoopTest` (Done, Nudge → Stopped, nudge reset, Blocked, tool error, step limit, time limit) |
-| 4 YOUR CODE runner | `test_workloads.py` - `UserCodeTest` (Launch choices, Error, Exited, KillTree → StoppedAtLimit with child processes) |
+| 2 AI agent | `test_agent.py` - `AgentLoopTest` (Done, Nudge → Stopped, nudge reset, Blocked, tool error, step limit, time limit) |
+| 3 YOUR CODE runner | `test_workloads.py` - `UserCodeTest` (Launch choices, Error, Exited, KillTree → StoppedAtLimit with child processes) |
