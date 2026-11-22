@@ -56,6 +56,14 @@ classDiagram
         -_code_lines(profile_path, n)
         -_fine_timer(on)
     }
+    class Tooltip {
+        +tip
+        +job
+        +__init__(widget, text, delay)
+        -_schedule(_e)
+        -_show()
+        -_hide(_e)
+    }
     class _Dialogs {
         +app
         +confirm
@@ -108,6 +116,14 @@ classDiagram
         +control
         +link
         +editor_busy
+        +idle
+        +idle_key
+        +idle_sample
+        +stat_fix
+        -_lhm_watch
+        -_lhm_next
+        -_lhm_found
+        -_input_hint
         -_ai_queue
         -_ai_busy
         +local_hw
@@ -163,6 +179,7 @@ classDiagram
         +links
         +combo_row
         +combos
+        +step_labels
         +test_var
         +radios
         +btn_start
@@ -177,7 +194,13 @@ classDiagram
         +program_var
         +program_entry
         +btn_browse
+        +btn_recent
+        +folder_var
+        +folder_entry
+        +btn_folder
         +hintrow
+        +plan_anchor
+        +plan_label
         +status
         +stat_val
         +stat_src
@@ -256,6 +279,23 @@ classDiagram
         -_target_levels()
         -_animate(dt)
         -_clear_readout()
+        -_idle_sync()
+        -_tick_idle(now)
+        -_probe_lhm_bg()
+        -_set_src(key, text, color, fix)
+        -_why_missing(key, src)
+        -_show_missing(key, src)
+        -_run_fix(fix)
+        -_test_fits(key)
+        -_test_tip(key)
+        -_update_steps()
+        -_code_plan(command)
+        -_show_plan()
+        -_browse_folder()
+        -_recent_file()
+        -_recent()
+        -_remember_program(command)
+        -_recent_menu()
         -_set_summary(text)
         -_show_summary(result, duration)
     }
@@ -525,6 +565,7 @@ classDiagram
         +readings()
     }
     class Poller {
+        +hz
         +gpu_info
         +disk
         +latest
@@ -542,603 +583,7 @@ classDiagram
         -_disk_idle
         -_lhm
         +sources
-        +__init__(gpu, disk)
-        +start()
-        +stop()
-        +sample()
-        -_cpu_power(now)
-        -_run()
-    }
-    class workloads["workloads.py"] {
-        <<module>>
-        +emit(kwargs)
-        -_render_frame()
-        -_cpu_worker(q, deadline)
-        +run_cpu2d(seconds)
-        +run_ram(seconds)
-        -_gl_context()
-        +run_gpu3d(seconds)
-        +run_disk(seconds, folder)
-        -_disk_windows(seconds, folder)
-        -_disk_linux(seconds, folder)
-        +run_pcie(seconds)
-        +run_ml(seconds, device)
-        +run_usercode(seconds, command)
-    }
-    class hotspots["hotspots.py"] {
-        <<module>>
-        +slow_python_sum(n)
-        +fast_numpy_sum(n)
-        +build_strings(n)
-        +wait_for_network()
-        +main()
-    }
-    class main["main.py"] {
-        <<module>>
-        +main()
-    }
-    class __init__["__init__.py"] {
-        <<module>>
-    }
-    class compute["compute.py"] {
-        <<module>>
-        +totals_slow(orders)
-        +totals_fast(orders)
-        -_score(chunk)
-        +score_in_threads(orders, workers)
-    }
-    class loader["loader.py"] {
-        <<module>>
-        +parse_row(row)
-        +load_orders(path)
-    }
-    class network["network.py"] {
-        <<module>>
-        +fetch_prices(n)
-    }
-    class report["report.py"] {
-        <<module>>
-        +format_line(o, scores)
-        +build_report(orders, prices, scores)
-    }
-    class agent["agent.py"] {
-        <<module>>
-        +emit(ev, kwargs)
-        +ollama_models()
-        +capabilities(model)
-        +pick_model(installed)
-        +chat(model, messages, timeout, think)
-        +safe_path(workdir, rel)
-        +tail(s, n)
-        +run_python(workdir, step, code, deadline)
-        +call_tool(workdir, step, name, args, deadline)
-        +unload(model)
-        +main()
-    }
-    class Blocked {
-    }
-    class analysis["analysis.py"] {
-        <<module>>
-        -_avg(vals)
-        -_windowed(samples)
-        -_states(w, uses_gpu, cores)
-        +analyze(samples, cores)
-        +spans_text(spans, limit)
-        +report(findings)
-    }
-    class control["control.py"] {
-        <<module>>
-        +user_dir()
-        +data_dir()
-        +publish_link(server)
-        +unpublish_link()
-    }
-    class ControlServer {
-        +token
-        +requests
-        +port
-        +token_file
-        +actions
-        +httpd
-        +__init__(port, token_file, actions)
-        +wait(args)
-        +close()
-    }
-    class main["main.py"] {
-        <<module>>
-        +lighten(hex_color, amount)
-        +mix(c1, c2, t)
-        +chamfer(canvas, x0, y0, x1, y1, c, kwargs)
-        -_code_lines(profile_path, n)
-        -_fine_timer(on)
-    }
-    class _Dialogs {
-        +app
-        +confirm
-        +notes
-        +__init__()
-        -_ai()
-        -_note(kind, title, msg)
-        +showerror(title, msg, kwargs)
-        +showwarning(title, msg, kwargs)
-        +showinfo(title, msg, kwargs)
-        +askokcancel(title, msg, kwargs)
-    }
-    class Replay {
-        +samples
-        +i
-        +t0
-        +__init__(samples)
-        +start()
-        +stop()
-        +latest()
-    }
-    class SearchCombo {
-        +key
-        +options
-        +on_pick
-        +color
-        +hover_color
-        -_focused
-        -_no_match
-        +frame
-        +var
-        +entry
-        +listbox
-        +enabled
-        -_placeholder
-        +__init__(parent, overlay, key, options, color, on_pick)
-        -_set_border(c)
-        -_on_focus_in(event)
-        -_on_focus_out(event)
-        -_maybe_hide()
-        -_filter(event)
-        -_show_results(matches)
-        -_hide_results()
-        -_on_select(event)
-        +set_value(value)
-        +clear()
-    }
-    class App {
-        +root
-        +control
-        +link
-        +editor_busy
-        -_ai_queue
-        -_ai_busy
-        +local_hw
-        +hw
-        +remote
-        -_connecting
-        -_lhm_probed
-        +options
-        +selected
-        +selected_value
-        +gpu_index
-        +disk_index
-        +test_key
-        +target_name
-        +replay
-        +record
-        +peak_io
-        +lost_since
-        +proc
-        +poller
-        +script
-        +running
-        +wl
-        +wl_time
-        +wl_error
-        +wl_got_data
-        +samples
-        +last_t
-        +peak_gbps
-        +t_start
-        +involved
-        +target
-        +level
-        +msg_unavail
-        +last_tick
-        +dash_off
-        -_lit
-        +outer
-        +ai_banner
-        +clock
-        +target_lbl
-        +btn_remote
-        +btn_local
-        +btn_ai
-        +canvas
-        +shapes
-        +bars
-        +glows
-        +graphs
-        +graph_box
-        +history
-        +frame_n
-        +links
-        +combo_row
-        +combos
-        +test_var
-        +radios
-        +btn_start
-        +btn_stop
-        +btn_compare
-        +btn_replay
-        +goalrow
-        +goal_ids
-        +goal_var
-        +goal_menu
-        +coderow
-        +program_var
-        +program_entry
-        +btn_browse
-        +hintrow
-        +status
-        +stat_val
-        +stat_src
-        +log
-        +summary
-        +events
-        +ai_steps
-        +ai_blocked
-        +ai_done_text
-        +ai_stop_text
-        +duration
-        +is_ai
-        +is_code
-        +program
-        +code_exit
-        +fps
-        +sample_times
-        +core_box
-        -_code_links
-        +__init__(root)
-        -_options_for(hw)
-        -_build_combos()
-        -_machine_name()
-        -_show_target()
-        -_apply_hardware()
-        -_build_core_strip()
-        -_browse_program()
-        +open_compare()
-        -_open_link()
-        -_drain_link()
-        -_open_in_editor(file, line)
-        +toggle_ai_control()
-        -_flash(widget, times)
-        -_drain_control()
-        -_ai_describe(action, args)
-        -_find_test(name)
-        -_ai_state()
-        -_ai_do(action, args)
-        -_load_remote_cfg()
-        +ask_remote()
-        -_connect(target)
-        -_poll_connect()
-        +use_local()
-        -_on_remote_lost()
-        -_draw_backdrop()
-        -_trace_points(a, b)
-        -_draw_trace(a, b)
-        -_draw_part(key)
-        -_grey_out(key)
-        -_light_up(key)
-        -_on_diagram_click(key)
-        -_on_combo(key, value)
-        -_select(key, value)
-        -_set_status(text, color)
-        +start_test()
-        -_disk_test_folder()
-        +start_replay(path)
-        -_save_run(result, duration, summary, findings)
-        -_link_profile(run, name)
-        -_previous_run()
-        -_sync_controls()
-        -_log(text, tag, clear)
-        -_drain_events()
-        -_read_proc(proc)
-        -_kill_tree()
-        +stop_test(result, summary)
-        -_fail(msg)
-        -_on_close()
-        +tick()
-        -_wl_fresh(now)
-        -_tick_running(now)
-        -_tick_replay(elapsed)
-        -_src(key, default)
-        -_update_readout(m, wl_fresh)
-        -_check_thermal(m)
-        -_target_levels()
-        -_animate(dt)
-        -_clear_readout()
-        -_set_summary(text)
-        -_show_summary(result, duration)
-    }
-    class CompareWindow {
-        +COLORS
-        +top
-        +vars
-        +metric
-        +metric_menu
-        +canvas
-        +text
-        +__init__(root, a, b)
-        -_pair()
-        -_series(run, key)
-        +refresh()
-        +write_table(a, b, stats)
-        +draw()
-    }
-    class mcp_server["mcp_server.py"] {
-        <<module>>
-        -_tool(name, desc, props, required)
-        +call_app(method, action, args)
-        +handle(msg)
-        +main()
-    }
-    class nvgpu["nvgpu.py"] {
-        <<module>>
-        -_s(v)
-        +names()
-    }
-    class Gpu {
-        +handle
-        +slowdown
-        +pcie
-        +link
-        -_stop
-        -_thread
-        +__init__(index)
-        -_nv(fn, args)
-        +start()
-        +stop()
-        -_pcie_loop()
-        +link_text()
-        +sample()
-    }
-    class profiler["profiler.py"] {
-        <<module>>
-        -_norm(path)
-        +num(v)
-        -_without_gpu(samples)
-        -_private_module(name)
-        -_python_dirs()
-        +project_root(script)
-        +module_name(script)
-        -_line_at(data)
-        -_states_by_line(data, samples, cores, t_offset)
-        -_attach(data, findings, by_line, field)
-        +link_findings(data, cores)
-        -_averages(samples)
-        +link_visualizer_run(profile_path, run, run_name)
-        +profile_of_command(command)
-        +find_pyspy()
-        +make_out_dir(out)
-        +pyspy_lines(raw_path, script, root)
-        +run_with_pyspy(pyspy, a, out)
-        +main()
-    }
-    class Profiler {
-        +script
-        +root
-        +python_dirs
-        +venvs
-        -_write_lock
-        +out
-        +interval
-        +memory
-        +lines
-        +hw
-        +hw_peak_gpu
-        +t0
-        +sampled
-        +done
-        +result
-        +exit_code
-        +crash
-        +finalizing
-        -_mine
-        +main_ident
-        +cores
-        +mem_peak
-        +started_epoch
-        +samples
-        +timeline
-        +tl_keys
-        -_tl_index
-        -_bucket
-        +hw_ready
-        +gpu_mine
-        +thread_hw
-        +own_threads
-        +hw_missing
-        +__init__(script, out, interval_ms, memory, root)
-        -_is_mine(filename)
-        -_in_venv(p)
-        -_sample_loop()
-        -_to_timeline(t, key, dt)
-        -_hardware_loop()
-        -_uses_gpu(gpu, pynvml, me, kids)
-        +gpu_used()
-        -_writer_loop()
-        +write(running)
-        -_write(running)
-        -_memory_check()
-        +run(argv)
-    }
-    class remote["remote.py"] {
-        <<module>>
-        +ssh_runner(host, user, key, port)
-        -_bundle()
-        -_ssh_error(stderr, host, port, key)
-    }
-    class RemoteError {
-    }
-    class RemoteProc {
-        +pid
-        +target
-        +q
-        +returncode
-        +__init__(target)
-        +stdout()
-        +poll()
-        -_finish(code)
-        +terminate(timeout)
-    }
-    class RemotePoller {
-        +t_watch
-        +__init__(target, gpu_index, disk)
-        +start()
-        +stop()
-        +sources()
-        +info()
-        +latest()
-    }
-    class RemoteTarget {
-        +label
-        +uses_ssh
-        +run
-        +dir
-        +agent
-        +alive
-        +hw
-        +proc
-        +lost_reason
-        -_hello
-        -_wlock
-        +latest
-        +info
-        +sources
-        +__init__(host, user, key, port, runner)
-        +connect()
-        +close()
-        -_remove_dir(wait)
-        +send(force, kwargs)
-        -_ping()
-        -_read()
-        +poller(gpu_index, disk)
-        +start(script, seconds, disk, command)
-    }
-    class remote_agent["remote_agent.py"] {
-        <<module>>
-        +send(kwargs)
-        +read(path, default)
-        +cpu_name()
-        +disk_of(path)
-        +mount_points()
-        +disks()
-        +hwmon_temp(want_names, want_labels)
-        +cpu_temp_path()
-        +board_temp_path()
-        +rapl_path()
-        +hardware()
-        +disk_folder(disk)
-        +start_workload(script, seconds, disk)
-        +stop_workload()
-        +unwatch()
-        +shutdown()
-        +watchdog()
-        +main()
-    }
-    class Sampler {
-        +disk
-        +stop_ev
-        +gpu
-        +last_cpu
-        +last_disk
-        +last_rapl
-        +last_cores
-        +sources
-        +__init__(gpu_index, disk)
-        +sample()
-        +run()
-        +stop()
-    }
-    class sandbox_run["sandbox_run.py"] {
-        <<module>>
-        -_norm(p)
-        +main()
-    }
-    class telemetry["telemetry.py"] {
-        <<module>>
-        -_com_call(obj, index, args, argtypes)
-        +dxgi_adapters()
-        +lhm_web_sensors(data)
-        -_lhm_web_up(timeout)
-        +pick_lhm(sensors, kinds, hw_name)
-        +board_temp(sensors)
-        -_disk_label(d)
-        +probe_lhm()
-        +rapl_available()
-        +detect_hardware()
-    }
-    class _Value {
-        -_fields_
-    }
-    class _Item {
-        -_fields_
-    }
-    class Pdh {
-        +FMT
-        +MORE_DATA
-        -_pdh
-        -_query
-        +__init__()
-        +add(path)
-        +collect()
-        +value(counter)
-        +array(counter)
-        +close()
-    }
-    class _Luid {
-        -_fields_
-    }
-    class _AdapterDesc1 {
-        -_fields_
-    }
-    class _PdhGpu {
-        -_ENGINE
-        +pdh
-        +engines
-        +memory
-        +__init__(pdh, luid, vram)
-        +sample()
-    }
-    class _Lhm {
-        -_PS
-        -_instance
-        -_lock
-        +source
-        +proc
-        +t
-        +sensors
-        +get(source)
-        +__init__(source)
-        +alive()
-        -_poll_web()
-        -_read_wmi()
-        +readings()
-    }
-    class Poller {
-        +gpu_info
-        +disk
-        +latest
-        +info
-        -_stop
-        -_thread
-        -_nv
-        -_pdh_gpu
-        -_pdh
-        -_rapl
-        -_rapl_t
-        -_rapl_hist
-        -_disk_key
-        -_disk_last
-        -_disk_idle
-        -_lhm
-        +sources
-        +__init__(gpu, disk)
+        +__init__(gpu, disk, hz)
         +start()
         +stop()
         +sample()
@@ -1168,6 +613,7 @@ classDiagram
     App ..> RemoteTarget : uses
     App ..> Replay : uses
     App ..> SearchCombo : uses
+    App ..> Tooltip : uses
     Pdh ..> _Value : uses
     Poller ..> Gpu : uses
     Poller ..> Pdh : uses

@@ -18,7 +18,10 @@ import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, "CLASS_DIAGRAM.md")
-SKIP_DIRS = {"__pycache__", "venv", ".venv", "env", ".git", "ai_workspace", "node_modules"}
+# only the app's own modules: not the tests, the example programs, the docs, or the copy of the app
+# packaged inside the VS Code extension (vscode-extension/app), which would show every class twice
+SKIP_DIRS = {"__pycache__", "venv", ".venv", "env", ".git", "ai_workspace", "node_modules", "tests", "examples",
+             "vscode-extension", "docs", "runs", ".hcv", ".claude"}
 SKIP_FILES = {os.path.basename(__file__)}
 
 
