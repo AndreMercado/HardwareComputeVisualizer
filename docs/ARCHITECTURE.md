@@ -279,7 +279,7 @@ longest stretches, problems first.
 
 Cost: O(n) time and memory for n samples (a 30-s test at 20 Hz is 600 samples). The same
 `_windowed` + `_states` are reused by the profiler to say which pattern held while each line of
-the user's code ran (6.6). Tested by 22 cases in `tests/unit/test_analysis.py`, including every
+the user's code ran (6.6). Tested by 24 cases in `tests/unit/test_analysis.py`, including every
 threshold boundary.
 
 ### 6.2 Fixed-rate telemetry sampling and RAPL power (`telemetry.Poller`)

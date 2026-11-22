@@ -36,6 +36,16 @@ PATTERNS = {
 }
 
 
+# readings of the GPU and its PCIe link: what other programs do there must not count for a run that
+# doesn't use the GPU (otherwise another app's GPU burst reads as "GPU waiting on the CPU")
+GPU_KEYS = ("gpu_util", "gpu_memctl", "gpu_vram", "board_util", "pcie_rx", "pcie_tx")
+
+
+def without_gpu(samples):
+    """The samples with the GPU / PCIe readings removed."""
+    return [{k: v for k, v in r.items() if k not in GPU_KEYS} for r in samples]
+
+
 def _avg(vals):
     vals = [v for v in vals if isinstance(v, (int, float))]
     return sum(vals) / len(vals) if vals else None
