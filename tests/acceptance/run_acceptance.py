@@ -458,7 +458,6 @@ def at6(d):
            summary=d.summary(), log=d.log()[-4000:])
 
 
-@step("AT-9", "Hot spots in VS Code: slow lines of your code boxed in the editor")
 def vscode_layers():
     """The HCV extension's eye-menu choices, as VS Code saved them (None if unknown)."""
     import shutil
@@ -474,6 +473,7 @@ def vscode_layers():
     return json.loads(row[0]) if row else {}
 
 
+@step("AT-9", "Hot spots in VS Code: slow lines of your code boxed in the editor")
 def at10(d):
     layers = vscode_layers()
     if layers is not None and layers.get("hcv.show.speed") is False:
