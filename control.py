@@ -16,7 +16,7 @@ Requests are handed to the app's UI thread, which shows each action (banner,
 flashing button, log line) and waits a moment before doing it, so a person
 can watch the AI work. Endpoints (all JSON):
 
-    GET  /state                  what is on screen: target, parts, test, running, readings, status
+    GET  /state                  what is on screen: machine, parts, test, running, readings, status
     GET  /summary                the last run's summary text
     GET  /runs                   recorded runs (newest first)
     POST /select   {"part", "name"?}         click a part (and pick one by name, e.g. a disk)
@@ -28,8 +28,6 @@ can watch the AI work. Endpoints (all JSON):
     POST /wait     {"timeout"?: s}           block until the running test ends (max 900 s)
     POST /replay   {"run"}                   replay a recorded run (file name from /runs)
     POST /compare  {"a"?, "b"?}              open COMPARE with these two runs
-    POST /remote   {"host", "user", "key", "port"?}   connect to a remote machine (SSH key)
-    POST /local                              back to this PC
 """
 import json
 import os
@@ -67,7 +65,7 @@ TOKEN_FILE = os.path.join(DATA_DIR, "control_token.txt")
 DISCOVERY_FILE = os.path.join(user_dir(), "app.json")  # how the VS Code extension finds the running app
 PORT = 8770
 ACTIONS = {"state", "summary", "runs", "select", "test", "program", "ai_task", "start", "stop", "wait",
-           "replay", "compare", "remote", "local"}
+           "replay", "compare"}
 # what the editor link may do: run a program and watch it, nothing else
 EDITOR_ACTIONS = {"state", "summary", "select", "test", "program", "start", "stop", "wait", "hello"}
 APP_VERSION = "0.2.0"

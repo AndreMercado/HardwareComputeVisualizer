@@ -10,7 +10,7 @@ if (Test-Path $old) { Remove-Item $old -Recurse -Force }
 $app = Join-Path $src "app"
 if (Test-Path $app) { Remove-Item $app -Recurse -Force }
 New-Item -ItemType Directory -Force $app | Out-Null
-$files = "main.py", "telemetry.py", "nvgpu.py", "workloads.py", "remote.py", "remote_agent.py", "control.py",
+$files = "main.py", "telemetry.py", "nvgpu.py", "workloads.py", "control.py",
          "agent.py", "sandbox_run.py", "analysis.py", "profiler.py", "mcp_server.py", "setup_lhm.ps1", "requirements.txt"
 foreach ($f in $files) { Copy-Item (Join-Path $repo $f) $app -Force }
 New-Item -ItemType Directory -Force (Join-Path $src "dist") | Out-Null

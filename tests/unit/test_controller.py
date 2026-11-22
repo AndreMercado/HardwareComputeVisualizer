@@ -27,7 +27,7 @@ App = main.App
 def fake_app(**state):
     """A stand-in for App with the fields the start/stop/tick code reads (widgets are mocks)."""
     ns = types.SimpleNamespace(
-        running=False, selected=None, selected_value=None, remote=None, replay=None,
+        running=False, selected=None, selected_value=None, replay=None,
         hw={"gpu_info": [], "cpu_temp": True, "disks": [], "threads": 8}, local_hw={"machine": "PC"},
         gpu_index=0, disk_index=0, options={p: f"{p} name" for p in main.PARTS},
         test_var=mock.Mock(get=mock.Mock(return_value="2d")),
@@ -74,9 +74,6 @@ class StartValidationTest(unittest.TestCase):
 
     def test_test_that_cannot_target_the_part(self):
         self.refused(*self.start("3d", "cpu"), "can't target CPU. It works on: GPU")
-
-    def test_ai_benchmark_is_local_only(self):
-        self.refused(*self.start("ai", "ram", remote=mock.Mock()), "runs on this PC only")
 
     def test_board_needs_an_nvidia_gpu(self):
         self.refused(*self.start("bus", "board"), "PCIe link of an NVIDIA GPU")

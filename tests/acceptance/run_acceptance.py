@@ -1,10 +1,10 @@
 """Acceptance test run with screenshots (Windows).
 
-    python tests/acceptance/run_acceptance.py [AT-4 AT-7 ...]     # default: all
+    python tests/acceptance/run_acceptance.py [AT-3 AT-6 ...]     # default: all
 
 Opens the real desktop app and goes through the acceptance test cases of
 docs/ACCEPTANCE_TESTS.md. Each step does what the user's click does - it calls the same
-handler the button or the diagram is wired to (App.start_test, App.stop_test, App.ask_remote,
+handler the button or the diagram is wired to (App.start_test, App.stop_test, App.open_compare,
 ...) - waits for the app's real reaction, and captures the window and every pop-up it opens
 (Win32 PrintWindow, so other windows on top don't matter). Real workloads run on the real
 hardware; nothing is simulated.
@@ -13,9 +13,8 @@ Output: docs/acceptance/img/AT-*.png and tests/work/acceptance/results.json (wha
 observed: status line, summary, log, pop-up text). Runs and settings go to a separate data
 folder (tests/work/acceptance/data), not the user's.
 
-Needs: Windows, the app's requirements. AT-2 needs SSH key login to the Linux machine in
-HCV_REMOTE (user@host, default andre@192.168.1.29); AT-6 needs Ollama with a tool-calling model;
-AT-10 needs VS Code with the HCV Hot Spots extension, open on examples/demo_project.
+Needs: Windows, the app's requirements. AT-5 needs Ollama with a tool-calling model; AT-9 needs
+VS Code with the HCV Hot Spots extension, open on examples/demo_project.
 """
 import ctypes
 import ctypes.wintypes as wt
@@ -297,28 +296,28 @@ def at1(d):
     record("AT-1", at1.title, screenshot=d.shot("AT-1_start_idle"), detected=hw, status=d.status())
 
 
-@step("AT-3", "Select a component, then another (UC-3, UC-4)")
+@step("AT-2", "Select a component, then another (UC-3, UC-4)")
 def at3(d):
     d.click_part("gpu")
-    s1 = d.shot("AT-3a_gpu_selected")
+    s1 = d.shot("AT-2a_gpu_selected")
     st1 = d.status()
     d.click_part("gpu")  # reselect: nothing changes
     st_same = d.status()
     d.click_part("cpu")
-    record("AT-3", at3.title, screenshot=[s1, d.shot("AT-3b_cpu_selected")], status_gpu=st1,
+    record("AT-2", at3.title, screenshot=[s1, d.shot("AT-2b_cpu_selected")], status_gpu=st1,
            status_after_reselect=st_same, status_cpu=d.status())
 
 
-@step("AT-8", "Invalid start requests are refused with a message (UC-13)")
+@step("AT-7", "Invalid start requests are refused with a message (UC-13)")
 def at8(d):
     shots, texts = [], []
     d.start()  # nothing selected yet (runs right after AT-1)
     h = wait_dialog("Can't start test")
     texts.append(dialog_text(h))
-    shots.append(capture_popup(h, "AT-8a_no_part_popup"))
+    shots.append(capture_popup(h, "AT-7a_no_part_popup"))
     answer(h)
     time.sleep(0.5)
-    shots.append(d.shot("AT-8b_no_part_status"))
+    shots.append(d.shot("AT-7b_no_part_status"))
     # YOUR CODE with nothing typed
     d.click_part("cpu")
     d.pick_test("code")
@@ -326,63 +325,63 @@ def at8(d):
     d.start()
     h = wait_dialog("Can't start test")
     texts.append(dialog_text(h))
-    shots.append(capture_popup(h, "AT-8c_no_command_popup"))
+    shots.append(capture_popup(h, "AT-7c_no_command_popup"))
     answer(h)
     # a program that doesn't exist: the runner reports it, the app says it failed to start
     d.set_program(r"C:\no\such\program.exe")
     d.start()
     h = wait_dialog("Can't start test", timeout=30)
     texts.append(dialog_text(h))
-    shots.append(capture_popup(h, "AT-8d_cannot_start_popup"))
+    shots.append(capture_popup(h, "AT-7d_cannot_start_popup"))
     answer(h)
     time.sleep(0.5)
-    shots.append(d.shot("AT-8e_after_failed_start"))
-    record("AT-8", at8.title, screenshot=shots, popups=texts, status=d.status(), running=d.running())
+    shots.append(d.shot("AT-7e_after_failed_start"))
+    record("AT-7", at8.title, screenshot=shots, popups=texts, status=d.status(), running=d.running())
 
 
-@step("AT-4", "2D workload on the CPU runs to completion (UC-5, UC-9, UC-10, UC-11)")
+@step("AT-3", "2D workload on the CPU runs to completion (UC-5, UC-9, UC-10, UC-11)")
 def at4(d):
     d.click_part("cpu")
     d.pick_test("2d")
-    s0 = d.shot("AT-4a_cpu_2d_ready")
+    s0 = d.shot("AT-3a_cpu_2d_ready")
     d.start()
     time.sleep(12)
-    s1 = d.shot("AT-4b_cpu_2d_running")
+    s1 = d.shot("AT-3b_cpu_2d_running")
     clock = d.ui(lambda: d.app.clock.cget("text"))
     d.finish_run(60)
     d.show_bottlenecks()
-    record("AT-4", at4.title, screenshot=[s0, s1, d.shot("AT-4c_cpu_2d_summary")], clock_while_running=clock,
+    record("AT-3", at4.title, screenshot=[s0, s1, d.shot("AT-3c_cpu_2d_summary")], clock_while_running=clock,
            status=d.status(), summary=d.summary())
 
 
-@step("AT-5", "3D workload on the GPU (UC-6)")
+@step("AT-4", "3D workload on the GPU (UC-6)")
 def at5(d):
     d.click_part("gpu")
     d.pick_test("3d")
     d.start()
     time.sleep(12)
-    s1 = d.shot("AT-5a_gpu_3d_running")
+    s1 = d.shot("AT-4a_gpu_3d_running")
     d.finish_run(60)
-    record("AT-5", at5.title, screenshot=[s1, d.shot("AT-5b_gpu_3d_summary")], status=d.status(), summary=d.summary())
+    record("AT-4", at5.title, screenshot=[s1, d.shot("AT-4b_gpu_3d_summary")], status=d.status(), summary=d.summary())
 
 
-@step("AT-7", "Stop a running test (UC-8)")
+@step("AT-6", "Stop a running test (UC-8)")
 def at7(d):
     d.click_part("ram")
     d.pick_test("2d")
     d.start()
     time.sleep(8)
-    s1 = d.shot("AT-7a_ram_running")
+    s1 = d.shot("AT-6a_ram_running")
     t0 = time.monotonic()
     d.stop()
     stopped_in = time.monotonic() - t0
     time.sleep(1)
     d.show_bottlenecks()
-    record("AT-7", at7.title, screenshot=[s1, d.shot("AT-7b_ram_stopped_summary")], stop_took_s=round(stopped_in, 2),
+    record("AT-6", at7.title, screenshot=[s1, d.shot("AT-6b_ram_stopped_summary")], stop_took_s=round(stopped_in, 2),
            status=d.status(), running=d.running(), summary=d.summary())
 
 
-@step("AT-12", "Other parts: RAM bandwidth (full run, compared with AT-7), disk I/O, PCIe bus, ML on the GPU")
+@step("AT-11", "Other parts: RAM bandwidth (full run, compared with AT-6), disk I/O, PCIe bus, ML on the GPU")
 def at12(d):
     shots, summaries = [], {}
     for part, test, name, wait_s in (("ram", "2d", "ram", 30), ("disk", "io", "disk", 30),
@@ -391,121 +390,63 @@ def at12(d):
         d.pick_test(test)
         d.start()
         time.sleep(12)
-        shots.append(d.shot(f"AT-12_{name}_running"))
+        shots.append(d.shot(f"AT-11_{name}_running"))
         d.finish_run(90)
-        shots.append(d.shot(f"AT-12_{name}_summary"))
+        shots.append(d.shot(f"AT-11_{name}_summary"))
         summaries[name] = {"status": d.status(), "summary": d.summary()}
-    record("AT-12", at12.title, screenshot=shots, results=summaries)
+    record("AT-11", at12.title, screenshot=shots, results=summaries)
 
 
-@step("AT-9", "YOUR CODE: run your own program and find its bottlenecks (ultimate goal)")
+@step("AT-8", "YOUR CODE: run your own program and find its bottlenecks (ultimate goal)")
 def at9(d):
     demo = os.path.join(ROOT, "examples", "demo_project", "main.py")
     d.click_part("cpu")
     d.pick_test("code")
     d.set_program(f'"{demo}"')
-    s0 = d.shot("AT-9a_your_code_ready")
+    s0 = d.shot("AT-8a_your_code_ready")
     d.start()
     time.sleep(6)
-    s1 = d.shot("AT-9b_your_code_running")
+    s1 = d.shot("AT-8b_your_code_running")
     d.finish_run(620)
     d.show_bottlenecks()
-    record("AT-9", at9.title, screenshot=[s0, s1, d.shot("AT-9c_your_code_summary")], status=d.status(),
+    record("AT-8", at9.title, screenshot=[s0, s1, d.shot("AT-8c_your_code_summary")], status=d.status(),
            summary=d.summary(), log=d.log()[-3000:])
 
 
-@step("AT-11", "Compare two runs and replay a recording (stretch goals)")
+@step("AT-10", "Compare two runs and replay a recording (stretch goals)")
 def at11(d):
     d.ui(d.app.open_compare)
     time.sleep(1.5)
     top = d.ui(lambda: [w for w in d.root.winfo_children() if isinstance(w, tk.Toplevel)][-1])
     hwnd = int(d.ui(lambda: top.wm_frame()), 16)
-    s1 = capture(hwnd, "AT-11a_compare_window")
+    s1 = capture(hwnd, "AT-10a_compare_window")
     title = d.ui(lambda: top.title())
     d.ui(top.destroy)
     runs = sorted(glob.glob(os.path.join(DATA, "runs", "*-2d-cpu.json")))
     d.ui(lambda: d.app.start_replay(runs[-1]))
     time.sleep(8)
-    s2 = d.shot("AT-11b_replay_running")
+    s2 = d.shot("AT-10b_replay_running")
     clock = d.ui(lambda: d.app.clock.cget("text"))
     d.finish_run(60)
-    record("AT-11", at11.title, screenshot=[s1, s2, d.shot("AT-11c_replay_ended")], compare_title=title,
+    record("AT-10", at11.title, screenshot=[s1, s2, d.shot("AT-10c_replay_ended")], compare_title=title,
            replay_file=os.path.basename(runs[-1]), clock_during_replay=clock, status=d.status())
 
 
-@step("AT-2", "Measure a remote Linux machine over SSH (UC-2)")
-def at2(d):
-    target = os.environ.get("HCV_REMOTE", "andre@192.168.1.29")
-    user, host = target.split("@")
-    key = os.path.join(os.path.expanduser("~"), ".ssh", "id_ed25519")
-    shots = []
-
-    def fill(h, u, k):
-        top = [w for w in d.root.winfo_children() if isinstance(w, tk.Toplevel)][-1]
-        entries = [w for w in top.winfo_children() if isinstance(w, tk.Entry)]
-        for e, v in zip(entries, (h, u, "22", k)):
-            e.delete(0, "end")
-            e.insert(0, v)
-        return top
-
-    def press_connect(top):
-        btn = [b for f in top.winfo_children() if isinstance(f, tk.Frame)
-               for b in f.winfo_children() if isinstance(b, tk.Button) and b.cget("text") == "CONNECT"][0]
-        btn.invoke()
-
-    # alt a: a host that doesn't exist
-    d.ui(d.app.ask_remote)
-    time.sleep(1)
-    top = d.ui(lambda: fill("no-such-host.invalid", user, key))
-    shots.append(capture(int(d.ui(lambda: top.wm_frame()), 16), "AT-2a_remote_dialog_bad_host"))
-    d.ui(lambda: press_connect(top))
-    h = wait_dialog("Can't connect", timeout=60)
-    err = dialog_text(h)
-    shots.append(capture_popup(h, "AT-2b_cannot_connect_popup"))
-    answer(h)
-    # the real machine
-    d.ui(d.app.ask_remote)
-    time.sleep(1)
-    top = d.ui(lambda: fill(host, user, key))
-    shots.append(capture(int(d.ui(lambda: top.wm_frame()), 16), "AT-2c_remote_dialog"))
-    d.ui(lambda: press_connect(top))
-    time.sleep(1)
-    shots.append(d.shot("AT-2d_connecting"))
-    if not d.wait(lambda: d.ui(lambda: d.app.remote is not None and d.app._connecting is None), 90):
-        raise TimeoutError("didn't connect")
-    time.sleep(2)
-    shots.append(d.shot("AT-2e_connected"))
-    connected = d.status()
-    d.click_part("cpu")
-    d.pick_test("2d")
-    d.start()
-    time.sleep(12)
-    shots.append(d.shot("AT-2f_remote_cpu_running"))
-    d.finish_run(90)
-    shots.append(d.shot("AT-2g_remote_cpu_summary"))
-    summary = d.summary()
-    d.ui(d.app.use_local)
-    time.sleep(2)
-    shots.append(d.shot("AT-2h_back_to_this_pc"))
-    record("AT-2", at2.title, screenshot=shots, bad_host_error=err, connected_status=connected, summary=summary,
-           status_after_this_pc=d.status())
-
-
-@step("AT-6", "AI Benchmark Mode: a local AI model does a task by itself (UC-7)")
+@step("AT-5", "AI Benchmark Mode: a local AI model does a task by itself (UC-7)")
 def at6(d):
     d.click_part("gpu")
     d.pick_test("ai")
     d.ui(lambda: d.app.goal_var.set(next(t for t in d.app.goal_ids if "matri" in t.lower())))
-    s0 = d.shot("AT-6a_ai_ready")
+    s0 = d.shot("AT-5a_ai_ready")
     d.start()
     time.sleep(45)
-    s1 = d.shot("AT-6b_ai_working")
+    s1 = d.shot("AT-5b_ai_working")
     d.finish_run(660)
-    record("AT-6", at6.title, screenshot=[s0, s1, d.shot("AT-6c_ai_summary")], status=d.status(),
+    record("AT-5", at6.title, screenshot=[s0, s1, d.shot("AT-5c_ai_summary")], status=d.status(),
            summary=d.summary(), log=d.log()[-4000:])
 
 
-@step("AT-10", "Hot spots in VS Code: slow lines of your code boxed in the editor")
+@step("AT-9", "Hot spots in VS Code: slow lines of your code boxed in the editor")
 def at10(d):
     demo = os.path.join(ROOT, "examples", "demo_project")
     out = os.path.join(demo, ".hcv", "profile.json")
@@ -514,7 +455,7 @@ def at10(d):
     with open(out, encoding="utf-8") as f:
         prof = json.load(f)
     shots = []
-    for rel, name in (("app/compute.py", "AT-10a_vscode_compute"), ("app/loader.py", "AT-10b_vscode_loader")):
+    for rel, name in (("app/compute.py", "AT-9a_vscode_compute"), ("app/loader.py", "AT-9b_vscode_loader")):
         subprocess.run(["code", "-r", "-g", os.path.join(demo, *rel.split("/")) + ":1"], shell=True)
         time.sleep(5)
         vs = [h for h, t, c in windows(pid=0) if "Visual Studio Code" in t and os.path.basename(rel) in t]
@@ -524,12 +465,12 @@ def at10(d):
             time.sleep(1.5)
             shots.append(grab_screen_area(vs[0], name))
     top = sorted(prof["lines"], key=lambda l: -l["share"])[:5]
-    record("AT-10", at10.title, screenshot=shots, profiler_exit=r.returncode, result=prof.get("result"),
+    record("AT-9", at10.title, screenshot=shots, profiler_exit=r.returncode, result=prof.get("result"),
            top_lines=[(os.path.relpath(l["file"], demo), l["line"], round(l["share"], 3)) for l in top],
            findings=[f["key"] for f in prof.get("findings", [])])
 
 
-ORDER = [at1, at8, at3, at4, at5, at7, at12, at9, at11, at2, at6, at10]
+ORDER = [at1, at8, at3, at4, at5, at7, at12, at9, at11, at6, at10]
 
 
 def save_results():

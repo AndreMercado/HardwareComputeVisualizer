@@ -10,6 +10,13 @@ Zachary Taylor
 
 CS 4398 · Group 19
 
+**Revision history**
+
+| Version | Date | Change |
+|---|---|---|
+| 1.0 | 2026-09-24 | First version. |
+| 1.1 | 2026-11-22 | Scope narrowed to the PC the app runs on: UC-2 (connect to a remote machine), FR-20 – FR-23, NFR-10 and NFR-11 are withdrawn, with every reference to remote / cloud targets. The remote feature was built (Nov 18) and then removed to keep the project focused on one machine. |
+
 ---
 
 ## Table of Contents
@@ -37,7 +44,7 @@ CS 4398 · Group 19
 4. Workload / Component Matrix
 5. Component Selection
    - UC-1: Detect Hardware at Startup
-   - UC-2: Connect to a Remote Machine
+   - UC-2: Connect to a Remote Machine *(withdrawn in v1.1)*
    - UC-3: Select a Component
    - UC-4: Deselect / Reselect a Component
 6. Benchmark Execution
@@ -83,13 +90,13 @@ This document specifies the requirements for the Hardware Compute Visualizer, a 
 The system shall:
 
 - Display a visual diagram of the PC's hardware components as selectable parts.
-- Allow the user to pick a target machine — the local PC, or a cloud machine the user rents, reached over SSH — then a component and a workload (2D or 3D) to run against it.
+- Allow the user to pick a component of the PC the app runs on and a workload (2D or 3D) to run against it.
 - Execute the selected workload for real on the selected hardware — never a simulated or scripted result.
 - Poll live hardware telemetry and animate the diagram in real time based on that telemetry.
 - Display live stats for the running workload: utilization, memory bandwidth, and temperature at minimum; frame time for 3D workloads; power draw and FLOPS where the hardware and workload make them available.
 - Provide an "AI Benchmark Mode" in which a locally run AI agent performs an open-ended task and the user observes real, unscripted hardware behavior.
 
-Out of scope: driver or firmware modification, overclocking, changing power states, clock speeds, or fan curves, any network dependency when testing the local PC, and renting, starting, stopping, or paying for cloud machines (the user manages these through their provider). A fixed AI/ML workload as a third test type is a stretch goal (see VI.2), not part of the MVP.
+Out of scope: driver or firmware modification, overclocking, changing power states, clock speeds, or fan curves, any network dependency, and measuring other (remote or cloud) machines (withdrawn in v1.1). A fixed AI/ML workload as a third test type is a stretch goal (see VI.2), not part of the MVP.
 
 ### 3. Intended Audience
 This document is intended for the developers building the application and for anyone evaluating what the finished product does. Developers should read Parts III and IV closely; evaluators can rely on Part II for a summary of what the app does.
@@ -112,10 +119,7 @@ This document is intended for the developers building the application and for an
 | MVP | Minimum Viable Product — the committed feature set for the first working version. |
 | Polling Rate | The frequency at which telemetry is read from hardware, measured in Hz. |
 | NVML | NVIDIA Management Library, the vendor interface used to read NVIDIA GPU telemetry. |
-| Target Machine | The computer whose hardware is being tested and shown: the local PC (default) or a remote cloud machine. |
-| Remote Target | A cloud machine the user rents from a provider (e.g., RunPod, AWS EC2, Lambda Labs) and connects to over SSH. |
-| Remote Agent | A small script the app copies to a remote target. It runs the workloads and reads telemetry there, and streams results back over SSH. |
-| SSH | Secure Shell, the encrypted protocol used to log in to and communicate with a remote target. |
+| Target Machine | The computer whose hardware is being tested and shown: the PC the application runs on. |
 
 ### 5. References
 - IEEE Std 830-1998, *IEEE Recommended Practice for Software Requirements Specifications* (outline followed by this document).
@@ -129,10 +133,10 @@ This document follows the outline format of IEEE Std 830. Functional requirement
 ## II. Overall Description
 
 ### 1. Product Perspective
-The Hardware Compute Visualizer is a standalone desktop application (built in Python with Tkinter) that combines a visual hardware diagram, a real-time telemetry pipeline, and a benchmark runner. A normal system monitor only reports a changing number; this application ties that number to a visible part of the PC shown doing the work. Tests can run on the local PC or on a cloud machine the user rents, so the app can also show hardware the user does not own.
+The Hardware Compute Visualizer is a standalone desktop application (built in Python with Tkinter) that combines a visual hardware diagram, a real-time telemetry pipeline, and a benchmark runner. A normal system monitor only reports a changing number; this application ties that number to a visible part of the PC shown doing the work.
 
 ### 2. Product Functions
-- Connect to a target machine — the local PC by default, or a rented cloud machine over SSH — and detect its CPU, GPU, and RAM.
+- Detect the PC's CPU, GPU, and RAM.
 - Render a diagram of the PC with CPU, GPU, and RAM (MVP) as selectable, distinctly colored parts.
 - Let the user select a component by clicking it in the diagram or through its search box.
 - Let the user pick a 2D or 3D workload, or AI Benchmark Mode, for the selected component.
@@ -151,14 +155,13 @@ The intended user is a PC enthusiast, hobbyist builder, or student who wants to 
 - **Hardware:** the CPU, GPU, and RAM installed in the machine running the app. Minimum 4 CPU cores and 8 GB of RAM; a GPU supporting OpenGL 3.3 or later for the 3D workload.
 - **GPU vendors:** NVIDIA GPUs are fully supported in the MVP (via NVML). AMD and Intel GPUs are best-effort; any metric that cannot be read shall show "unavailable" (UC-12).
 - **Privileges:** runs as a standard user. Some sensors (notably CPU temperature and power) are only exposed on Windows through a helper that requires administrator rights; without it those metrics show "unavailable".
-- **Remote target (optional):** Linux cloud machine (Ubuntu 22.04+) with an NVIDIA GPU, Python 3.11+, and SSH key access, from any provider (e.g., RunPod, AWS EC2, Lambda Labs).
-- **Network:** None when testing the local PC (including AI Benchmark Mode); a stable internet connection when testing a remote target.
+- **Network:** None (including AI Benchmark Mode).
 
 ### 5. Design and Implementation Constraints
 - Telemetry access is strictly read-only. The application shall never modify driver settings, clock speeds, fan curves, or power states.
-- When testing the local PC, the core benchmark/visual loop, including AI Benchmark Mode, shall function with no network connection. Remote mode needs a network connection only between the app and the cloud machine.
+- The core benchmark/visual loop, including AI Benchmark Mode, shall function with no network connection.
 - Diagram animation shall sustain 60 FPS during an active test.
-- Telemetry for MVP components shall be polled at 10 Hz or greater with under 200 ms latency on the local PC, and under 500 ms on a cloud machine to allow for network delay.
+- Telemetry for MVP components shall be polled at 10 Hz or greater with under 200 ms latency.
 - Telemetry polling and workloads shall run off the UI thread so they cannot stall rendering.
 - Tkinter's Canvas is not designed for 60 FPS animation. If profiling shows it cannot hold 60 FPS, the diagram renderer may move to a faster toolkit (e.g., pygame or PySide6) without changing these requirements.
 
@@ -166,8 +169,7 @@ The intended user is a PC enthusiast, hobbyist builder, or student who wants to 
 - The OS and vendor libraries expose utilization and memory counters for the installed hardware without kernel drivers.
 - NVIDIA telemetry depends on an installed NVIDIA driver that ships NVML.
 - AI Benchmark Mode depends on Ollama with the Llama 3.2 3B model installed locally. The model is downloaded once during setup; no network connection is needed after that.
-- Cloud machines are assumed to run Linux (Ubuntu 22.04 or later) with Python 3.11+ and the NVIDIA driver installed, and to allow SSH key login. Because they are virtual machines, CPU temperature and power are usually hidden and will show "unavailable". The user creates, starts, stops, and pays for the cloud machine through their provider (e.g., RunPod, AWS EC2, Lambda Labs).
-- The 3D workload depends on a working OpenGL 3.3 driver; on a headless cloud machine it renders off-screen through EGL.
+- The 3D workload depends on a working OpenGL 3.3 driver.
 - The user does not run other heavy workloads during a test; the app reports what the hardware is doing, which includes other programs' load.
 
 ---
@@ -180,7 +182,6 @@ The user picks a hardware part, picks a workload, and watches a real-time, truth
 Tools used:
 - Python as the primary implementation language.
 - Tkinter for the user interface.
-- Paramiko (SSH) for connecting to rented cloud machines.
 - `psutil` for CPU and RAM utilization and memory usage.
 - `pynvml` (NVML) for NVIDIA GPU utilization, VRAM, temperature, and power.
 - LibreHardwareMonitor (optional, requires administrator) for CPU temperature and power.
@@ -188,7 +189,7 @@ Tools used:
 - Ollama running Llama 3.2 3B (4-bit quantized, about 2 GB) as the AI agent's local model.
 
 ### 2. System Architecture
-When the user starts a test, the UI layer sends start(test, part) to the **Benchmark Runner** and start(parts) to the **Telemetry Poller**, telling it which component(s) to watch. The runner executes the workload on the real hardware. On a cloud machine, the runner and poller run inside a small remote agent on that machine and send results back over SSH. The poller reads sensors at 10 Hz or greater (read-only) and passes cleaned values to the **Diagram Renderer / Stat Readout**, which draws at 60 FPS. When the test stops or completes, the runner reports completion and the poller stops.
+When the user starts a test, the UI layer sends start(test, part) to the **Benchmark Runner** and start(parts) to the **Telemetry Poller**, telling it which component(s) to watch. The runner executes the workload on the real hardware. The poller reads sensors at 10 Hz or greater (read-only) and passes cleaned values to the **Diagram Renderer / Stat Readout**, which draws at 60 FPS. When the test stops or completes, the runner reports completion and the poller stops.
 
 ### 3. Benchmark Sequence
 1. User selects a part, picks a test, and presses Start.
@@ -213,14 +214,17 @@ Each workload is offered only for the components it meaningfully exercises. Comp
 | Field | Description |
 |---|---|
 | Priority | Essential |
-| Trigger | Application launches, or the user changes the target machine (UC-2) |
+| Trigger | Application launches |
 | Precondition | None |
-| Basic Path | 1. The application queries the target machine's OS and vendor libraries for its CPU, GPU(s), and RAM — directly on the local PC, or through the remote agent on a cloud machine.<br>2. Detected device names populate each part's search options.<br>3. The diagram renders each detected part as selectable.<br>4. Any part that cannot be detected is shown greyed out with "not detected". |
+| Basic Path | 1. The application queries the OS and vendor libraries for the PC's CPU, GPU(s), and RAM.<br>2. Detected device names populate each part's search options.<br>3. The diagram renders each detected part as selectable.<br>4. Any part that cannot be detected is shown greyed out with "not detected". |
 | Alternate Path | a. No GPU is detected: the GPU part is greyed out as "not detected" and the 3D workload is disabled.<br>b. NVML is missing: the GPU name is taken from the operating system and its GPU metrics show "unavailable". |
 | Postcondition | Every detected part is shown as selectable and its search box lists the real device name. |
 | Requirement | **FR-1:** The application shall list only hardware actually detected on the machine. If more than one GPU is present, each shall be selectable separately. |
 
-#### UC-2: Connect to a Remote Machine
+#### UC-2: Connect to a Remote Machine *(withdrawn in v1.1)*
+
+Withdrawn in v1.1: the application measures only the PC it runs on. Kept below for the record.
+
 | Field | Description |
 |---|---|
 | Priority | Essential |
@@ -371,9 +375,9 @@ Each workload is offered only for the components it meaningfully exercises. Comp
 
 ### 9. External Interface Requirements
 - **User interface:** A single window with the hardware diagram on top, a search box under each part, a workload selector, Start/Stop buttons, a live stat panel, and a status line. Dark theme using the colors in III.10.
-- **Hardware interfaces:** Read-only access to CPU, GPU, and RAM counters through the OS and vendor libraries (on a cloud machine, through the remote agent). No writes to any hardware register or setting.
-- **Software interfaces:** `psutil` (CPU/RAM), NVML via `pynvml` (NVIDIA GPU), LibreHardwareMonitor (optional, CPU temperature/power), OpenGL 3.3 / EGL (3D workload), Paramiko (SSH to cloud machines), and Ollama's local API on localhost (AI agent).
-- **Communication interfaces:** Local mode: no external network connections; the only connection is to the local Ollama service on 127.0.0.1. Remote mode: one SSH connection (TCP port 22, key authentication) to the user's cloud machine, carrying commands and telemetry.
+- **Hardware interfaces:** Read-only access to CPU, GPU, and RAM counters through the OS and vendor libraries No writes to any hardware register or setting.
+- **Software interfaces:** `psutil` (CPU/RAM), NVML via `pynvml` (NVIDIA GPU), LibreHardwareMonitor (optional, CPU temperature/power), OpenGL 3.3 (3D workload), and Ollama's local API on localhost (AI agent).
+- **Communication interfaces:** No external network connections; the only connections are to local services on 127.0.0.1 (Ollama, LibreHardwareMonitor, and the app's own control API).
 
 ### 10. Interface Wireframe
 The picker screen shows a diagram of three clickable parts on top with a search box under each, and a status line naming the selected part. Colors: CPU = `#3b82f6`, GPU = `#22c55e`, RAM = `#eab308`, background = `#0f172a`. The selected part is drawn with a white outline. The workload selector, Start/Stop buttons, and stat panel (III.9) sit below the search boxes.
@@ -384,7 +388,7 @@ The picker screen shows a diagram of three clickable parts on top with a search 
 
 | ID | Quality | Requirement | Verification |
 |---|---|---|---|
-| NFR-1 | Performance | Telemetry shall be polled at 10 Hz or greater with under 200 ms latency (under 500 ms on a cloud machine). | Log sample and draw timestamps during a 60 s run; check poll interval ≤100 ms and latency <200 ms for 95% of samples. |
+| NFR-1 | Performance | Telemetry shall be polled at 10 Hz or greater with under 200 ms latency. | Log sample and draw timestamps during a 60 s run; check poll interval ≤100 ms and latency <200 ms for 95% of samples. |
 | NFR-2 | Performance | The diagram shall render at 60 FPS (≤17 ms per frame) during an active test. | Log frame times during each workload; average ≥58 FPS, no frame >50 ms. |
 | NFR-3 | Reliability | Displayed values shall be real and current for the full duration of the test — no stale data older than 200 ms. | Compare readout values to logged raw samples. |
 | NFR-4 | Robustness | Telemetry failures and unsupported combinations shall produce a clear error, never a crash or fake data. | Unplug/deny a sensor source, run an unsupported combination; app keeps running. |
@@ -393,8 +397,8 @@ The picker screen shows a diagram of three clickable parts on top with a search 
 | NFR-7 | Security | Code run by the AI agent shall have no network access, no administrator rights, and file access limited to its working folder. | Attempt a network call and an out-of-folder write from the agent; both are blocked. |
 | NFR-8 | Safety | Any test shall stop within 1 s of a component reaching its thermal limit. | Lower the limit in a debug setting and confirm abort. |
 | NFR-9 | Usability | From launch, a user shall be able to start a test in no more than 3 interactions: select a part, select a workload, press Start. | Walkthrough with a new user. |
-| NFR-10 | Security | Remote connections shall use SSH key authentication only, and no passwords or cloud-account credentials shall be stored. | Code review; inspect saved settings files. |
-| NFR-11 | Reliability | If the connection to a cloud machine is lost, the remote workload shall stop within 10 seconds so it does not keep running (and billing) unattended. | Disconnect the network mid-test; confirm the remote process ends. |
+| NFR-10 *(withdrawn in v1.1)* | Security | Remote connections shall use SSH key authentication only, and no passwords or cloud-account credentials shall be stored. | Code review; inspect saved settings files. |
+| NFR-11 *(withdrawn in v1.1)* | Reliability | If the connection to a cloud machine is lost, the remote workload shall stop within 10 seconds so it does not keep running (and billing) unattended. | Disconnect the network mid-test; confirm the remote process ends. |
 
 ---
 
@@ -415,7 +419,7 @@ The picker screen shows a diagram of three clickable parts on top with a search 
 | FR-17 | UC-12 | Simulate sensor failure; other parts keep updating. |
 | FR-18 | UC-13 | Start unsupported combination; no animation shown. |
 | FR-19 | UC-14 | NFR-8 test. |
-| FR-20 – FR-23 | UC-2 | Connect to a cloud machine with a key; check no credentials are saved; drop the connection mid-test (NFR-11); disconnect and confirm the agent is removed. |
+| FR-20 – FR-23 *(withdrawn in v1.1)* | UC-2 | Connect to a cloud machine with a key; check no credentials are saved; drop the connection mid-test (NFR-11); disconnect and confirm the agent is removed. |
 
 ---
 
@@ -424,7 +428,7 @@ The picker screen shows a diagram of three clickable parts on top with a search 
 ### 1. MVP Scope — Committed to Build
 - Hardware detection and a diagram of CPU + GPU + RAM as clickable parts
 - Real telemetry for those 3 parts (10 Hz+, under 200 ms latency)
-- Two real workloads: one 2D, one 3D (never simulated), runnable on the local PC or on a rented cloud machine over SSH
+- Two real workloads: one 2D, one 3D (never simulated), run on the PC
 - Diagram animates the active part(s) at 60 FPS from real utilization
 - Live readout per test: utilization, memory bandwidth, temperature (plus frame time for 3D)
 - Stop button, end-of-test summary, and thermal safety abort

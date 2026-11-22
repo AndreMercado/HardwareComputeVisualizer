@@ -20,8 +20,7 @@ IMG = os.path.join(DOCS, "img")
 # (markdown file, names for its mermaid blocks in order)
 SOURCES = [
     (os.path.join(DOCS, "STATECHARTS.md"),
-     ["statechart_1_test_session", "statechart_2_target_machine", "statechart_3_ai_agent",
-      "statechart_4_your_code_runner"]),
+     ["statechart_1_test_session", "statechart_2_ai_agent", "statechart_3_your_code_runner"]),
     (os.path.join(DOCS, "ARCHITECTURE.md"), ["architecture_processes", "class_diagram_design"]),
     (os.path.join(ROOT, "CLASS_DIAGRAM.md"), ["class_diagram_full"]),
 ]
