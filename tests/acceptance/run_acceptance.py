@@ -459,7 +459,26 @@ def at6(d):
 
 
 @step("AT-9", "Hot spots in VS Code: slow lines of your code boxed in the editor")
+def vscode_layers():
+    """The HCV extension's eye-menu choices, as VS Code saved them (None if unknown)."""
+    import shutil
+    import sqlite3
+    import tempfile
+    src = os.path.join(os.environ.get("APPDATA", ""), "Code", "User", "globalStorage", "state.vscdb")
+    if not os.path.isfile(src):
+        return None
+    tmp = os.path.join(tempfile.mkdtemp(prefix="hcv-vsstate-"), "state.vscdb")
+    shutil.copy(src, tmp)  # VS Code keeps the file open
+    with sqlite3.connect(tmp) as con:
+        row = con.execute("select value from ItemTable where key = 'hcv.hcv-hotspots'").fetchone()
+    return json.loads(row[0]) if row else {}
+
+
 def at10(d):
+    layers = vscode_layers()
+    if layers is not None and layers.get("hcv.show.speed") is False:
+        raise RuntimeError("the speed boxes are switched off in VS Code (eye menu on a Memory-only view): "
+                           "right-click the yellow run button and choose Everything, then re-run AT-9")
     demo = os.path.join(ROOT, "examples", "demo_project")
     out = os.path.join(demo, ".hcv", "profile.json")
     r = subprocess.run([sys.executable, os.path.join(ROOT, "profiler.py"), "--out", out, "--root", demo, "--cwd", demo,

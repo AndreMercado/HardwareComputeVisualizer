@@ -58,7 +58,7 @@ CASES = {
              "The program runs with its project's Python and folder (shown under PROGRAM); its output appears in "
              "the log intact; when it exits the summary shows the exit code, every reading and the bottlenecks."),
     "AT-9": ("Hot spots in VS Code", "Ultimate goal (SRS VI.3)",
-             "VS Code with the HCV Hot Spots extension, open on `examples/demo_project`.",
+             "VS Code with the HCV Hot Spots extension, open on `examples/demo_project`; its eye menu (right-click the yellow ▶) on Everything, the default - the speed boxes are hidden in the Memory-only views.",
              ["Profile the demo project (the yellow ▶ in VS Code; the test runs `profiler.py` the same way).",
               "Open `app/compute.py` and `app/loader.py`."],
              "The slowest lines are boxed and ranked (#1, #2 …) with their share of the run; lines below each "

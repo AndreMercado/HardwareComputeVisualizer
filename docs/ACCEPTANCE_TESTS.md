@@ -7,7 +7,7 @@ captures the window and every pop-up (Win32 `PrintWindow`; pop-ups from the scre
 results below are what that run recorded (`tests/work/acceptance/results.json`); this page is written
 from them by `tests/acceptance/write_doc.py`. Each case can also be done by hand with the steps given.
 
-**Result of the last run: 11 of 11 passed.** Machine: 32 GB RAM, 12th Gen Intel(R) Core(TM) i7-12700K (12C/20T), NVIDIA GeForce RTX 3080 Ti, ASUSTeK COMPUTER INC. ROG STRIX Z690-E GAMING WIFI, Samsung SSD 980 PRO 2TB (C:) - 2 TB SSD.
+**Result of the last run: 10 of 11 passed.** Machine: 32 GB RAM, 12th Gen Intel(R) Core(TM) i7-12700K (12C/20T), NVIDIA GeForce RTX 3080 Ti, ASUSTeK COMPUTER INC. ROG STRIX Z690-E GAMING WIFI, Samsung SSD 980 PRO 2TB (C:) - 2 TB SSD.
 
 Not covered here, and why: **UC-12** (telemetry lost) and **UC-14** (thermal abort) can't be triggered safely on real hardware - pulling a sensor or overheating a part - so they are verified by the unit tests (`tests/unit/test_controller.py`, `SafetyTest`). **UC-2** (remote machine) was withdrawn in SRS v1.1.
 
@@ -23,7 +23,7 @@ Not covered here, and why: **UC-12** (telemetry lost) and **UC-14** (thermal abo
 | [AT-6](#at-6) | UC-8 | Stop a running test | pass |
 | [AT-7](#at-7) | UC-13 | Invalid start requests are refused | pass |
 | [AT-8](#at-8) | Ultimate goal (SRS VI.3) | YOUR CODE: your own program and its bottlenecks | pass |
-| [AT-9](#at-9) | Ultimate goal (SRS VI.3) | Hot spots in VS Code | pass |
+| [AT-9](#at-9) | Ultimate goal (SRS VI.3) | Hot spots in VS Code | **fail** |
 | [AT-10](#at-10) | Stretch goals (SRS VI.2) | Compare two runs and replay a recording | pass |
 | [AT-11](#at-11) | UC-5, UC-9; stretch goals | Other parts: RAM bandwidth, disk I/O, PCIe bus, ML | pass |
 
@@ -367,7 +367,7 @@ Bottlenecks: none found - no single pattern held for 10% of the run.
 ### Hot spots in VS Code
 
 **Covers:** Ultimate goal (SRS VI.3)  
-**Preconditions:** VS Code with the HCV Hot Spots extension, open on `examples/demo_project`.
+**Preconditions:** VS Code with the HCV Hot Spots extension, open on `examples/demo_project`; its eye menu (right-click the yellow ▶) on Everything, the default - the speed boxes are hidden in the Memory-only views.
 
 **Steps**
 
@@ -376,9 +376,7 @@ Bottlenecks: none found - no single pattern held for 10% of the run.
 
 **Expected:** The slowest lines are boxed and ranked (#1, #2 …) with their share of the run; lines below each other form one box; the profile also lists the bottlenecks.
 
-**Observed:** pass.
-
-- Profiler result: finished; top lines: `app\network.py:8` 50 %, `app\report.py:5` 12 %, `app\compute.py:12` 12 %, `app\compute.py:32` 5 %, `app\loader.py:7` 4 %; findings: serial
+**Observed: FAILED** - checked on the screenshots: no boxes are drawn. VS Code's eye menu was set to a Memory-only view (hcv.show.speed = false) and the profile had no memory data, so nothing was shown. Re-run with the eye menu on Everything.
 
 **Screenshots**
 
